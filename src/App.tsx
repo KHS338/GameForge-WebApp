@@ -1,193 +1,642 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
   Bell,
   Gamepad2,
-  Globe,
-  Heart,
-  LayoutDashboard,
-  Mail,
-  MapPin,
+  LogOut,
   Menu,
+  PlusCircle,
   Search,
   ShieldCheck,
   ShoppingCart,
   Sparkles,
   Star,
   Trash2,
-  Users,
-  UserRound,
 } from 'lucide-react';
-import {
-  blogPosts,
-  buildRecommendations,
-  companyProfile,
-  featuredGames,
-  findGameById,
-  genreOptions,
-  metrics,
-  navigationItems,
-  socialLinks,
-  type ViewKey,
-} from './data';
-import {
-  addDraftGame,
-  deleteDraftGame,
-  login,
-  removeNotification,
-  setActiveGenre,
-  setRole,
-  setSearchQuery,
-  updateDraftGame,
-  type DraftGame,
-  type RootState,
-} from './store';
+import { authApi, clearToken, gamesApi, getToken, type ApiGame, type ApiUser, type CreateGamePayload } from './api';
+import { genreOptions } from './data';
+import { login, logout, type RootState, type UserProfile } from './store';
 
-type GameView = ViewKey | 'game';
+type AuthMode = 'login' | 'signup';
+type ViewKey = 'home' | 'games' | 'sell' | 'profile' | 'cart' | 'payment' | 'detail';
 
-const viewTitles: Record<GameView, { eyebrow: string; title: string; description: string }> = {
-  home: {
-    eyebrow: 'Launchpad',
-    title: 'A Steam-style marketplace for indie games',
-    description:
-      'Buyers discover curated titles, sellers manage listings, and the platform promotes featured releases with analytics and notifications.',
-  },
-  explore: {
-    eyebrow: 'Catalog',
-    title: 'Discover games with smart recommendations',
-    description: 'Search, filter, and browse from a storefront that reacts to player preferences and seller highlights.',
-  },
-  sell: {
-    eyebrow: 'Seller tools',
-    title: 'Manage game listings with CRUD controls',
-    description: 'Create drafts, update pricing, feature releases, and remove old listings from one dashboard.',
-  },
-  analytics: {
-    eyebrow: 'Company insights',
-    title: 'Track sales, feature performance, and engagement',
-    description: 'See the metrics that help sellers and the platform team make better decisions.',
-  },
-  blog: {
-    eyebrow: 'Content',
-    title: 'Publish updates, guides, and indie dev stories',
-    description: 'A blog section keeps the storefront active and improves SEO while supporting seller education.',
-  },
-  contact: {
-    eyebrow: 'Support',
-    title: 'Contact the team and find the office on Google Maps',
-    description: 'Clear contact details and a location embed make the site feel trustworthy and complete.',
-  },
-  profile: {
-    eyebrow: 'Personalization',
-    title: 'User profiles, social links, and saved preferences',
-    description: 'Profiles make the storefront feel personal and let users tailor their experience.',
-  },
-  game: {
-    eyebrow: 'Game page',
-    title: 'Browse the full game gallery',
-    description: 'Each title opens into a dedicated page with a bigger cover, more screenshots, and purchase details.',
-  },
+type Role = 'buyer' | 'seller';
+
+const emptyAuthForm: { name: string; email: string; password: string; role: Role } = {
+  name: '',
+  email: '',
+  password: '',
+  role: 'buyer',
 };
 
-const initialAuthForm: { name: string; email: string; password: string; role: 'buyer' | 'seller' } = {
-  name: 'Amina Rahman',
-  email: 'amina@gameforge.dev',
-  password: 'indie-market',
-  role: 'seller' as const,
+const emptyGameForm = {
+  title: '',
+  genre: 'Action',
+  studio: '',
+  description: '',
+  price: '',
+  tags: '',
+  coverImage: '',
+  galleryImages: '',
+  discountPercent: '0',
 };
+
+const discountOptions = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+
+const buyerViews: ViewKey[] = ['home', 'games', 'cart', 'profile'];
+const sellerViews: ViewKey[] = ['home', 'sell', 'profile'];
+
+function initials(value: string) {
+  const parts = value.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) {
+    return 'GF';
+  }
+
+  return parts
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('')
+    .slice(0, 2);
+}
+
+function buildPlaceholderCover(label: string) {
+  const safeLabel = label.trim() || 'Game';
+  const shortLabel = safeLabel.length > 18 ? `${safeLabel.slice(0, 18)}...` : safeLabel;
+  const mark = initials(safeLabel);
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="900" height="1200" viewBox="0 0 900 1200">
+      <defs>
+        <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#10213e" />
+          <stop offset="55%" stop-color="#18345c" />
+          <stop offset="100%" stop-color="#22c7a8" />
+        </linearGradient>
+      </defs>
+      <rect width="900" height="1200" rx="72" fill="url(#bg)" />
+      <circle cx="724" cy="184" r="150" fill="rgba(255,255,255,0.12)" />
+      <circle cx="170" cy="1020" r="190" fill="rgba(255,179,71,0.16)" />
+      <text x="72" y="858" fill="#ffffff" font-family="Space Grotesk, sans-serif" font-size="88" font-weight="700">${shortLabel}</text>
+      <text x="72" y="960" fill="rgba(255,255,255,0.82)" font-family="Sora, sans-serif" font-size="54" font-weight="600">${mark}</text>
+    </svg>
+  `;
+
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+function mapUser(user: ApiUser): UserProfile {
+  return {
+    id: user._id,
+    name: user.username,
+    email: user.email,
+    role: user.role === 'seller' ? 'seller' : 'buyer',
+    walletBalance: user.walletBalance ?? 0,
+    city: '',
+    bio: user.bio ?? '',
+    avatar: user.avatar ?? initials(user.username),
+    genres: ['Action', 'Adventure', 'Puzzle'],
+  };
+}
+
+function getDiscountPercent(game: ApiGame) {
+  return Number(game.discountPercent ?? 0);
+}
+
+function getDiscountedPrice(game: ApiGame) {
+  const percent = getDiscountPercent(game);
+  return Number((game.price * (1 - percent / 100)).toFixed(2));
+}
 
 function App() {
   const dispatch = useDispatch();
   const session = useSelector((state: RootState) => state.session);
-  const market = useSelector((state: RootState) => state.market);
-  const [activeView, setActiveView] = useState<GameView>('home');
+  const [booting, setBooting] = useState(true);
+  const [authMode, setAuthMode] = useState<AuthMode>('login');
+  const [authForm, setAuthForm] = useState(emptyAuthForm);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [activeView, setActiveView] = useState<ViewKey>('home');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
-  const [authForm, setAuthForm] = useState(initialAuthForm);
-  const [draftForm, setDraftForm] = useState({ title: '', genre: 'Action', price: '' });
-  const [selectedGameId, setSelectedGameId] = useState(featuredGames[0]?.id ?? 'ember-path');
-  const featuredScrollRef = useState<HTMLDivElement | null>(null);
+  const [games, setGames] = useState<ApiGame[]>([]);
+  const [gamesLoading, setGamesLoading] = useState(false);
+  const [gamesError, setGamesError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [cartIds, setCartIds] = useState<string[]>([]);
+  const [checkoutMessage, setCheckoutMessage] = useState<string | null>(null);
+  const [gameMessage, setGameMessage] = useState<string | null>(null);
+  const [gameForm, setGameForm] = useState(emptyGameForm);
+  const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
+  const [gameEditForm, setGameEditForm] = useState({
+    title: '',
+    genre: 'Action',
+    studio: '',
+    description: '',
+    price: '',
+    tags: '',
+    coverImage: '',
+    galleryImages: '',
+    discountPercent: '0',
+    featured: false,
+  });
+  const featuredGames = useMemo(() => games.filter((game) => game.featured), [games]);
 
-  const recommendations = useMemo(
-    () => buildRecommendations(session.user?.genres ?? ['Action', 'Puzzle'], market.searchQuery),
-    [market.searchQuery, session.user?.genres],
-  );
-
+  const role = session.user?.role ?? 'buyer';
+  const navItems = role === 'seller' ? sellerViews : buyerViews;
+  const cartGames = useMemo(() => games.filter((game) => cartIds.includes(game._id)), [cartIds, games]);
+  const cartTotal = useMemo(() => cartGames.reduce((sum, game) => sum + getDiscountedPrice(game), 0), [cartGames]);
+  const selectedGame = useMemo(() => games.find((game) => game._id === selectedGameId) ?? null, [games, selectedGameId]);
   const filteredGames = useMemo(() => {
-    const query = market.searchQuery.trim().toLowerCase();
+    const query = searchQuery.trim().toLowerCase();
+    return games.filter((game) => {
+      if (!query) {
+        return true;
+      }
 
-    return featuredGames.filter((game) => {
-      const matchesGenre = market.activeGenre === 'All' || game.genre === market.activeGenre;
-      const matchesQuery =
-        query.length === 0 || `${game.title} ${game.studio} ${game.genre}`.toLowerCase().includes(query);
-
-      return matchesGenre && matchesQuery;
+      return `${game.title} ${game.genre} ${game.studio}`.toLowerCase().includes(query);
     });
-  }, [market.activeGenre, market.searchQuery]);
-
-  const currentView = viewTitles[activeView];
-  const selectedGame = findGameById(selectedGameId) ?? featuredGames[0];
-
-  const featuredGamesList = featuredGames.filter((game) => game.featured);
-
-  const openGamePage = (gameId: string) => {
-    setSelectedGameId(gameId);
-    setActiveView('game');
-  };
-
-  const handleAuthSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    dispatch(
-      login({
-        name: authForm.name,
-        email: authForm.email,
-        role: authForm.role,
-        city: 'Lahore, Pakistan',
-        bio: 'Marketplace member with a preference for polished indie games and responsive seller tools.',
-        avatar: authForm.name
-          .split(' ')
-          .map((part) => part[0])
-          .join('')
-          .slice(0, 2)
-          .toUpperCase(),
-        genres: ['Action', 'Narrative', 'Puzzle'],
-      }),
-    );
-
-    dispatch(setRole(authForm.role));
-    setActiveView(authForm.role === 'seller' ? 'sell' : 'explore');
-  };
-
-  const handleCreateDraft = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    if (!draftForm.title.trim() || !draftForm.price.trim()) {
-      return;
+  }, [games, searchQuery]);
+  const ownGames = useMemo(() => {
+    if (!session.user) {
+      return [] as ApiGame[];
     }
 
-    const draft: DraftGame = {
-      id: crypto.randomUUID(),
-      title: draftForm.title.trim(),
-      genre: draftForm.genre,
-      price: Number(draftForm.price),
-      featured: false,
-      status: 'Draft',
+    const userId = session.user.id;
+
+    return games.filter((game) => typeof game.sellerId !== 'string' && game.sellerId._id === userId);
+  }, [games, session.user]);
+
+  const selectedGameGallery = useMemo(() => {
+    if (!selectedGame) {
+      return [] as string[];
+    }
+
+    const gallery = selectedGame.media?.gallery?.filter((image) => image.trim()) ?? [];
+    if (gallery.length > 0) {
+      return gallery;
+    }
+
+    const cover = selectedGame.media?.cover?.trim() ? selectedGame.media.cover : buildPlaceholderCover(selectedGame.title);
+    return [cover, buildPlaceholderCover(`${selectedGame.title} 2`), buildPlaceholderCover(`${selectedGame.title} 3`)];
+  }, [selectedGame]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function restoreSession() {
+      const token = getToken();
+      if (!token) {
+        if (mounted) {
+          setBooting(false);
+        }
+        return;
+      }
+
+      try {
+        const currentUser = await authApi.getCurrentUser();
+        if (!mounted) {
+          return;
+        }
+        dispatch(login(mapUser(currentUser)));
+      } catch {
+        clearToken();
+        dispatch(logout());
+      } finally {
+        if (mounted) {
+          setBooting(false);
+        }
+      }
+    }
+
+    void restoreSession();
+
+    return () => {
+      mounted = false;
     };
+  }, [dispatch]);
 
-    dispatch(addDraftGame(draft));
-    setDraftForm({ title: '', genre: draftForm.genre, price: '' });
-    setActiveView('sell');
-  };
-
-  const featuredCarouselScroll = (direction: 'left' | 'right') => {
-    const carousel = featuredScrollRef[0];
-    if (!carousel) {
+  useEffect(() => {
+    if (!session.isAuthenticated) {
       return;
     }
 
-    carousel.scrollBy({ left: direction === 'left' ? -420 : 420, behavior: 'smooth' });
+    let mounted = true;
+
+    async function loadGames() {
+      setGamesLoading(true);
+      setGamesError(null);
+
+      try {
+        const nextGames = await gamesApi.getAll();
+        if (!mounted) {
+          return;
+        }
+
+        setGames(nextGames);
+      } catch {
+        if (mounted) {
+          setGamesError('Could not load games from the backend.');
+        }
+      } finally {
+        if (mounted) {
+          setGamesLoading(false);
+        }
+      }
+    }
+
+    void loadGames();
+
+    return () => {
+      mounted = false;
+    };
+  }, [session.isAuthenticated]);
+
+  useEffect(() => {
+    if (role === 'buyer' && activeView === 'sell') {
+      setActiveView('games');
+    }
+
+    if (role === 'seller' && (activeView === 'games' || activeView === 'cart' || activeView === 'payment')) {
+      setActiveView('sell');
+    }
+  }, [activeView, role]);
+
+  useEffect(() => {
+    if (!selectedGameId && games.length > 0) {
+      setSelectedGameId(games[0]._id);
+    }
+  }, [games, selectedGameId]);
+
+  useEffect(() => {
+    if (activeView === 'detail' && !selectedGame && games.length > 0) {
+      setSelectedGameId(games[0]._id);
+    }
+  }, [activeView, games, selectedGame]);
+
+  useEffect(() => {
+    if (selectedGame) {
+      setGameEditForm({
+        title: selectedGame.title,
+        genre: selectedGame.genre,
+        studio: selectedGame.studio,
+        description: selectedGame.description,
+        price: String(selectedGame.price),
+        tags: (selectedGame.tags ?? []).join(', '),
+        coverImage: selectedGame.media?.cover ?? '',
+        galleryImages: (selectedGame.media?.gallery ?? []).join(', '),
+        discountPercent: String(selectedGame.discountPercent ?? 0),
+        featured: selectedGame.featured,
+      });
+    }
+  }, [selectedGame]);
+
+  const handleAuthSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAuthError(null);
+    setAuthBusy(true);
+
+    try {
+      if (authMode === 'signup') {
+        if (!authForm.name.trim()) {
+          throw new Error('Username is required');
+        }
+
+        const result = await authApi.register(authForm.email.trim(), authForm.name.trim(), authForm.password, authForm.role);
+        dispatch(login(mapUser(result.user)));
+      } else {
+        const result = await authApi.login(authForm.email.trim(), authForm.password);
+        dispatch(login(mapUser(result.user)));
+      }
+
+      setActiveView('home');
+      setAuthForm(emptyAuthForm);
+    } catch (error) {
+      clearToken();
+      dispatch(logout());
+      setAuthError(error instanceof Error ? error.message : 'Authentication failed');
+    } finally {
+      setAuthBusy(false);
+    }
   };
+
+  const handleLogout = () => {
+    clearToken();
+    dispatch(logout());
+    setGames([]);
+    setCartIds([]);
+    setActiveView('home');
+    setSearchQuery('');
+    setCheckoutMessage(null);
+    setGameMessage(null);
+  };
+
+  const openGameDetail = (gameId: string) => {
+    setSelectedGameId(gameId);
+    setActiveView('detail');
+  };
+
+  const goBackFromDetail = () => {
+    setActiveView(role === 'buyer' ? 'games' : 'sell');
+  };
+
+  const toggleCart = (gameId: string) => {
+    setCartIds((current) => (current.includes(gameId) ? current.filter((id) => id !== gameId) : [...current, gameId]));
+  };
+
+  const handleCreateGame = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setGameMessage(null);
+
+    if (role !== 'seller') {
+      setGameMessage('Only sellers can create listings.');
+      return;
+    }
+
+    const title = gameForm.title.trim();
+    const studio = gameForm.studio.trim();
+    const description = gameForm.description.trim();
+    const price = Number(gameForm.price);
+    const tags = gameForm.tags
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+    const gallery = gameForm.galleryImages
+      .split(',')
+      .map((image) => image.trim())
+      .filter(Boolean);
+    const cover = gameForm.coverImage.trim();
+    const discountPercent = Number(gameForm.discountPercent);
+
+    if (!title || !studio || !description || Number.isNaN(price)) {
+      setGameMessage('Fill in all fields first.');
+      return;
+    }
+
+    try {
+      const payload: CreateGamePayload = {
+        title,
+        genre: gameForm.genre,
+        studio,
+        description,
+        price,
+        tags,
+        discountPercent: Number.isNaN(discountPercent) ? 0 : discountPercent,
+        media: {
+          cover: cover || buildPlaceholderCover(title),
+          gallery,
+        },
+      };
+
+      await gamesApi.create(payload);
+      const nextGames = await gamesApi.getAll();
+      setGames(nextGames);
+      setGameForm(emptyGameForm);
+      setGameMessage('Game saved to MongoDB.');
+      setActiveView('sell');
+    } catch (error) {
+      setGameMessage(error instanceof Error ? error.message : 'Could not create the game.');
+    }
+  };
+
+  const handleFeatureGame = async (gameId: string) => {
+    setGameMessage(null);
+
+    if (role !== 'seller') {
+      setGameMessage('Only sellers can feature games.');
+      return;
+    }
+
+    try {
+      const result = await gamesApi.featureGame(gameId);
+      const [nextUser, nextGames] = await Promise.all([authApi.getCurrentUser(), gamesApi.getAll()]);
+      dispatch(login(mapUser(nextUser)));
+      setGames(nextGames);
+      setGameMessage(result.message);
+      setActiveView('sell');
+    } catch (error) {
+      setGameMessage(error instanceof Error ? error.message : 'Could not feature the game.');
+    }
+  };
+
+  const handleUpdateGame = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedGame || role !== 'seller') {
+      return;
+    }
+
+    try {
+      const updatedGame = await gamesApi.update(selectedGame._id, {
+        title: gameEditForm.title.trim(),
+        genre: gameEditForm.genre,
+        studio: gameEditForm.studio.trim(),
+        description: gameEditForm.description.trim(),
+        price: Number(gameEditForm.price),
+        featured: gameEditForm.featured,
+        discountPercent: Number(gameEditForm.discountPercent),
+        tags: gameEditForm.tags
+          .split(',')
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+        media: {
+          cover: gameEditForm.coverImage.trim() || buildPlaceholderCover(gameEditForm.title.trim() || selectedGame.title),
+          gallery: gameEditForm.galleryImages
+            .split(',')
+            .map((image) => image.trim())
+            .filter(Boolean),
+        },
+      });
+
+      setGames((current) => current.map((game) => (game._id === updatedGame._id ? updatedGame : game)));
+      setSelectedGameId(updatedGame._id);
+      setGameMessage('Game updated successfully.');
+    } catch (error) {
+      setGameMessage(error instanceof Error ? error.message : 'Could not update the game.');
+    }
+  };
+
+  const handleDeleteGame = async () => {
+    if (!selectedGame || role !== 'seller') {
+      return;
+    }
+
+    try {
+      await gamesApi.delete(selectedGame._id);
+      setGames((current) => current.filter((game) => game._id !== selectedGame._id));
+      setSelectedGameId(null);
+      setActiveView('sell');
+      setGameMessage('Game removed from listing.');
+    } catch (error) {
+      setGameMessage(error instanceof Error ? error.message : 'Could not delete the game.');
+    }
+  };
+
+  const handleCheckout = async () => {
+    setCheckoutMessage(null);
+
+    if (role !== 'buyer') {
+      setCheckoutMessage('Only buyers can pay from a wallet.');
+      return;
+    }
+
+    if (!cartGames.length) {
+      setCheckoutMessage('Your cart is empty.');
+      return;
+    }
+
+    const walletBalance = session.user?.walletBalance ?? 0;
+    if (cartTotal > walletBalance) {
+      setCheckoutMessage('Not enough wallet balance.');
+      return;
+    }
+
+    try {
+      for (const game of cartGames) {
+        await gamesApi.purchase(game._id);
+      }
+
+      const [nextUser, nextGames] = await Promise.all([authApi.getCurrentUser(), gamesApi.getAll()]);
+      dispatch(login(mapUser(nextUser)));
+      setGames(nextGames);
+      setCartIds([]);
+      setActiveView('games');
+      setCheckoutMessage('Payment complete. Wallet updated and seller credited.');
+    } catch (error) {
+      setCheckoutMessage(error instanceof Error ? error.message : 'Payment failed.');
+    }
+  };
+
+  if (booting) {
+    return (
+      <div className="auth-screen">
+        <div className="ambient ambient-one" />
+        <div className="ambient ambient-two" />
+        <div className="auth-shell">
+          <section className="panel auth-copy">
+            <div className="brand-mark">
+              <div className="brand-icon">
+                <Gamepad2 size={20} />
+              </div>
+              <div>
+                <p>GameForge</p>
+                <span>Indie marketplace</span>
+              </div>
+            </div>
+            <h1>Checking your session...</h1>
+            <p>Loading your saved login and wallet from MongoDB.</p>
+          </section>
+          <section className="panel auth-panel">
+            <div className="panel-inner auth-panel-loading">
+              <span className="eyebrow">Please wait</span>
+              <p className="auth-message">Connecting to your account.</p>
+            </div>
+          </section>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session.isAuthenticated) {
+    return (
+      <div className="auth-screen">
+        <div className="ambient ambient-one" />
+        <div className="ambient ambient-two" />
+        <div className="ambient ambient-three" />
+
+        <div className="auth-shell">
+          <section className="panel auth-copy">
+            <div className="brand-mark">
+              <div className="brand-icon">
+                <Gamepad2 size={20} />
+              </div>
+              <div>
+                <p>GameForge</p>
+                <span>Indie marketplace</span>
+              </div>
+            </div>
+            <span className="eyebrow">Login first</span>
+            <h1>Sign in or register to continue</h1>
+            <p>The marketplace stays hidden until your backend session is valid. Buyers get a cart and wallet checkout. Sellers get listing tools only.</p>
+            <div className="auth-points">
+              <article className="auth-point">
+                <strong>Real auth</strong>
+                <span>Login and register use the Express backend.</span>
+              </article>
+              <article className="auth-point">
+                <strong>Wallets</strong>
+                <span>Every account starts with a wallet balance you can spend or receive.</span>
+              </article>
+              <article className="auth-point">
+                <strong>Role split</strong>
+                <span>Buyers buy. Sellers create listings. The wrong routes are hidden.</span>
+              </article>
+            </div>
+          </section>
+
+          <section className="panel auth-panel">
+            <div className="auth-toggle">
+              <button type="button" className={authMode === 'login' ? 'pill active' : 'pill'} onClick={() => setAuthMode('login')}>
+                Login
+              </button>
+              <button type="button" className={authMode === 'signup' ? 'pill active' : 'pill'} onClick={() => setAuthMode('signup')}>
+                Register
+              </button>
+            </div>
+
+            <form className="auth-form" onSubmit={handleAuthSubmit}>
+              {authMode === 'signup' && (
+                <label>
+                  <span>Username</span>
+                  <input
+                    type="text"
+                    placeholder="Your display name"
+                    value={authForm.name}
+                    onChange={(event) => setAuthForm({ ...authForm, name: event.target.value })}
+                  />
+                </label>
+              )}
+
+              <label>
+                <span>Email</span>
+                <input
+                  type="email"
+                  placeholder="you@example.com"
+                  value={authForm.email}
+                  onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })}
+                />
+              </label>
+
+              <label>
+                <span>Password</span>
+                <input
+                  type="password"
+                  placeholder="••••••••"
+                  value={authForm.password}
+                  onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })}
+                />
+              </label>
+
+              {authMode === 'signup' && (
+                <label>
+                  <span>Account type</span>
+                  <select value={authForm.role} onChange={(event) => setAuthForm({ ...authForm, role: event.target.value as Role })}>
+                    <option value="buyer">Buyer</option>
+                    <option value="seller">Seller</option>
+                  </select>
+                </label>
+              )}
+
+              {authError && <p className="auth-message error">{authError}</p>}
+
+              <button type="submit" className="cta primary block" disabled={authBusy}>
+                {authBusy ? 'Working...' : authMode === 'login' ? 'Enter dashboard' : 'Create account'}
+              </button>
+            </form>
+          </section>
+        </div>
+      </div>
+    );
+  }
+
+  const sellerName = session.user?.name ?? 'Guest';
+  const walletBalance = session.user?.walletBalance ?? 0;
 
   return (
     <div className="app-shell">
@@ -206,44 +655,44 @@ function App() {
           </div>
           <div>
             <p>GameForge</p>
-            <span>Indie marketplace</span>
+            <span>{role === 'buyer' ? 'Buyer dashboard' : 'Seller dashboard'}</span>
           </div>
         </div>
 
-        <label className="search-field" htmlFor="game-search">
-          <Search size={16} />
-          <input
-            id="game-search"
-            type="search"
-            placeholder="Search games, studios, genres"
-            value={market.searchQuery}
-            onChange={(event) => dispatch(setSearchQuery(event.target.value))}
-          />
-        </label>
+        {role === 'buyer' && activeView === 'games' && (
+          <label className="search-field" htmlFor="game-search">
+            <Search size={16} />
+            <input
+              id="game-search"
+              type="search"
+              placeholder="Search backend listings"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+            />
+          </label>
+        )}
 
         <div className="topbar-actions">
-          <div className="role-switch">
-            <button
-              type="button"
-              className={session.user?.role === 'buyer' ? 'pill active' : 'pill'}
-              onClick={() => dispatch(setRole('buyer'))}
-            >
-              Buyer
-            </button>
-            <button
-              type="button"
-              className={session.user?.role === 'seller' ? 'pill active' : 'pill'}
-              onClick={() => dispatch(setRole('seller'))}
-            >
-              Seller
-            </button>
-          </div>
-          <button type="button" className="icon-button">
+          <button type="button" className="icon-button" title="Notifications">
             <Bell size={18} />
           </button>
-          <button type="button" className="cta ghost" onClick={() => setActiveView('profile')}>
-            <UserRound size={16} />
-            {session.user?.name ?? 'Guest'}
+          <div className="role-chip">
+            <ShieldCheck size={14} />
+            <span>{role}</span>
+          </div>
+          <div className="role-chip wallet-chip">
+            <span>Wallet</span>
+            <strong>${walletBalance.toFixed(2)}</strong>
+          </div>
+          {role === 'buyer' && (
+            <button type="button" className="cta ghost" onClick={() => setActiveView('cart')}>
+              <ShoppingCart size={16} />
+              Cart {cartIds.length ? `(${cartIds.length})` : ''}
+            </button>
+          )}
+          <button type="button" className="cta ghost" onClick={handleLogout}>
+            <LogOut size={16} />
+            Logout
           </button>
         </div>
       </header>
@@ -251,574 +700,179 @@ function App() {
       <div className={`layout ${mobileMenuOpen ? 'menu-open' : ''}`}>
         <aside className="sidebar panel">
           <div className="sidebar-hero">
-            <p>Semester project ready</p>
-            <h2>Marketplace dashboard</h2>
-            <span>Navigation, auth, seller tools, and responsive layouts in one frontend.</span>
+            <p>Logged in</p>
+            <h2>{sellerName}</h2>
+            <span>{session.user?.email}</span>
           </div>
 
           <nav className="sidebar-nav">
-            {navigationItems.map((item) => (
+            {navItems.map((item) => (
               <button
-                key={item.key}
+                key={item}
                 type="button"
-                className={activeView === item.key ? 'nav-item active' : 'nav-item'}
+                className={activeView === item ? 'nav-item active' : 'nav-item'}
                 onClick={() => {
-                  setActiveView(item.key);
+                  setActiveView(item);
                   setMobileMenuOpen(false);
                 }}
               >
-                <span>{item.label}</span>
-                <small>{item.description}</small>
+                <span>{item}</span>
+                <small>{item === 'games' ? 'Browse and buy' : item === 'cart' ? 'Checkout wallet cart' : item === 'sell' ? 'Create listings' : 'Account settings'}</small>
               </button>
             ))}
           </nav>
 
           <div className="sidebar-card">
             <div className="card-header compact">
-              <Heart size={16} />
-              <span>Wishlisted today</span>
+              <Sparkles size={16} />
+              <span>Account status</span>
             </div>
-            <strong>18 titles</strong>
-            <p>Players are saving more narrative and strategy games this week.</p>
+            <strong>{role === 'buyer' ? 'Buyer access' : 'Seller access'}</strong>
+            <p>{role === 'buyer' ? 'You can browse games and pay from your wallet.' : 'You can create and manage listings.'}</p>
           </div>
         </aside>
 
         <main className="content">
-          <section className="hero panel">
-            <div className="hero-copy">
-              <span className="eyebrow">{currentView.eyebrow}</span>
-              <h1>{currentView.title}</h1>
-              <p>{currentView.description}</p>
-
-              <div className="hero-actions">
-                <button type="button" className="cta primary" onClick={() => setActiveView('explore')}>
-                  <ShoppingCart size={16} />
-                  Explore catalog
-                </button>
-                <button type="button" className="cta ghost" onClick={() => setActiveView('sell')}>
-                  <Sparkles size={16} />
-                  Feature a game
-                </button>
-              </div>
-
-              <div className="metric-row">
-                {metrics.map((metric) => (
-                  <article key={metric.label} className="metric-tile">
-                    <strong>{metric.value}</strong>
-                    <span>{metric.label}</span>
-                  </article>
-                ))}
-              </div>
-            </div>
-
-            <div className="auth-panel panel-inner">
-              <div className="auth-toggle">
-                <button type="button" className={authMode === 'login' ? 'pill active' : 'pill'} onClick={() => setAuthMode('login')}>
-                  Login
-                </button>
-                <button type="button" className={authMode === 'signup' ? 'pill active' : 'pill'} onClick={() => setAuthMode('signup')}>
-                  Sign Up
-                </button>
-              </div>
-
-              <form className="auth-form" onSubmit={handleAuthSubmit}>
-                <label>
-                  <span>Name</span>
-                  <input
-                    type="text"
-                    value={authForm.name}
-                    onChange={(event) => setAuthForm({ ...authForm, name: event.target.value })}
-                  />
-                </label>
-                <label>
-                  <span>Email</span>
-                  <input
-                    type="email"
-                    value={authForm.email}
-                    onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })}
-                  />
-                </label>
-                <label>
-                  <span>Password</span>
-                  <input
-                    type="password"
-                    value={authForm.password}
-                    onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })}
-                  />
-                </label>
-
-                <label>
-                  <span>Account type</span>
-                  <select value={authForm.role} onChange={(event) => setAuthForm({ ...authForm, role: event.target.value as 'buyer' | 'seller' })}>
-                    <option value="buyer">Buyer</option>
-                    <option value="seller">Seller</option>
-                  </select>
-                </label>
-
-                <button type="submit" className="cta primary block">
-                  {authMode === 'login' ? 'Enter dashboard' : 'Create account'}
-                </button>
-              </form>
-            </div>
-          </section>
-
           {activeView === 'home' && (
-            <>
-              <section className="panel carousel-panel">
-                <div className="section-heading">
-                  <div>
-                    <span className="eyebrow">Featured games</span>
-                    <h2>Carousel spotlight</h2>
-                  </div>
-                  <div className="carousel-actions">
-                    <button type="button" className="icon-button" onClick={() => featuredCarouselScroll('left')}>
-                      <span aria-hidden="true">‹</span>
+            <section className="hero panel">
+              <div className="hero-copy">
+                <span className="eyebrow">Dashboard</span>
+                <h1>Welcome back, {sellerName}</h1>
+                <p>{role === 'buyer' ? 'Use your wallet to buy games from the storefront.' : 'Create listings and watch your wallet grow from sales.'}</p>
+                <div className="hero-actions">
+                  {role === 'buyer' ? (
+                    <button type="button" className="cta primary" onClick={() => setActiveView('games')}>
+                      <ShoppingCart size={16} />
+                      Browse games
                     </button>
-                    <button type="button" className="icon-button" onClick={() => featuredCarouselScroll('right')}>
-                      <span aria-hidden="true">›</span>
+                  ) : (
+                    <button type="button" className="cta primary" onClick={() => setActiveView('sell')}>
+                      <Sparkles size={16} />
+                      Add listing
                     </button>
-                  </div>
+                  )}
                 </div>
+              </div>
 
-                <div className="featured-carousel" ref={(node) => {
-                  featuredScrollRef[1](node);
-                }}>
-                  {featuredGamesList.map((game) => (
-                    <article key={game.id} className="featured-slide" onClick={() => openGamePage(game.id)} role="button" tabIndex={0}>
-                      <img src={game.media.cover} alt={game.title} />
+              <div className="panel-inner auth-summary">
+                <div>
+                  <span className="eyebrow">Session</span>
+                  <strong>{role}</strong>
+                  <p>{session.user?.email}</p>
+                </div>
+                <div>
+                  <span className="eyebrow">Wallet</span>
+                  <strong>${walletBalance.toFixed(2)}</strong>
+                  <p>{role === 'buyer' ? 'Use this balance for checkout.' : 'This is your seller balance.'}</p>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {activeView === 'home' && role === 'buyer' && (
+            <section className="panel featured-strip">
+              <div className="section-heading">
+                <div>
+                  <span className="eyebrow">Featured games</span>
+                  <h2>Carousel spotlight</h2>
+                </div>
+              </div>
+
+              {gamesLoading && <p className="auth-message">Loading featured games...</p>}
+              {!gamesLoading && featuredGames.length === 0 && (
+                <div className="empty-state">
+                  <p>No featured games yet.</p>
+                </div>
+              )}
+
+              <div className="featured-carousel">
+                {featuredGames.map((game) => {
+                  const cover = game.media?.cover?.trim() ? game.media.cover : buildPlaceholderCover(game.title);
+
+                  return (
+                    <article key={game._id} className="featured-slide" role="button" tabIndex={0} onClick={() => openGameDetail(game._id)}>
+                      <img src={cover} alt={game.title} />
                       <div className="featured-slide-copy">
                         <span>{game.genre}</span>
                         <h3>{game.title}</h3>
                         <p>{game.studio}</p>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              </section>
-
-              <section className="grid-section">
-                <article className="panel feature-card">
-                  <div className="card-header">
-                    <LayoutDashboard size={18} />
-                    <span>Dashboard overview</span>
-                  </div>
-                  <h3>Everything important is on one screen.</h3>
-                  <p>Buyers see recommendations, sellers manage listings, and admins watch analytics without jumping around.</p>
-                </article>
-                <article className="panel feature-card">
-                  <div className="card-header">
-                    <ShieldCheck size={18} />
-                    <span>Security</span>
-                  </div>
-                  <h3>High security and clean workflows.</h3>
-                  <p>The UI is ready for secure login, role-based access, and future payment integrations.</p>
-                </article>
-                <article className="panel feature-card">
-                  <div className="card-header">
-                    <Globe size={18} />
-                    <span>Multi-device</span>
-                  </div>
-                  <h3>Responsive from phone to desktop.</h3>
-                  <p>The layout collapses neatly so the semester project looks polished on any screen size.</p>
-                </article>
-              </section>
-            </>
-          )}
-
-          {activeView === 'explore' && (
-            <section className="two-column">
-              <article className="panel">
-                <div className="section-heading">
-                  <div>
-                    <span className="eyebrow">Search and filter</span>
-                    <h2>Browse indie games</h2>
-                  </div>
-                  <div className="genre-pills">
-                    {genreOptions.map((genre) => (
-                      <button
-                        key={genre}
-                        type="button"
-                        className={market.activeGenre === genre ? 'pill active' : 'pill'}
-                        onClick={() => dispatch(setActiveGenre(genre))}
-                      >
-                        {genre}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="card-grid">
-                  {filteredGames.map((game) => (
-                    <article key={game.id} className="game-card clickable" onClick={() => openGamePage(game.id)} role="button" tabIndex={0}>
-                      <img src={game.media.cover} alt={game.title} className="game-card-image" />
-                      <div className="game-card-top">
-                        <span className="genre-tag">{game.genre}</span>
-                        {game.featured && <span className="featured-tag">Featured</span>}
-                      </div>
-                      <h3>{game.title}</h3>
-                      <p>{game.description}</p>
-                      <div className="game-card-meta">
-                        <span>{game.studio}</span>
-                        <strong>${game.price.toFixed(2)}</strong>
-                      </div>
-                      <div className="game-card-footer">
-                        <span>
-                          <Star size={14} /> {game.rating}
-                        </span>
-                        <button type="button" className="cta ghost compact" onClick={(event) => {
-                          event.stopPropagation();
-                          openGamePage(game.id);
-                        }}>
-                          <ShoppingCart size={14} />
-                          View game
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              </article>
-
-              <aside className="panel recommendation-panel">
-                <div className="section-heading compact">
-                  <div>
-                    <span className="eyebrow">AI recommendations</span>
-                    <h2>Suggested for you</h2>
-                  </div>
-                </div>
-
-                {recommendations.map((game) => (
-                  <article key={game.id} className="recommendation-item">
-                    <div>
-                      <h3>{game.title}</h3>
-                      <p>
-                        {game.genre} · {game.studio}
-                      </p>
-                    </div>
-                    <strong>${game.price.toFixed(2)}</strong>
-                  </article>
-                ))}
-
-                <div className="notification-stack">
-                  {market.notifications.map((notification) => (
-                    <button
-                      key={notification.id}
-                      type="button"
-                      className={`notification ${notification.tone}`}
-                      onClick={() => dispatch(removeNotification(notification.id))}
-                    >
-                      <strong>{notification.title}</strong>
-                      <span>{notification.detail}</span>
-                    </button>
-                  ))}
-                </div>
-              </aside>
-            </section>
-          )}
-
-          {activeView === 'sell' && (
-            <section className="two-column">
-              <article className="panel">
-                <div className="section-heading">
-                  <div>
-                    <span className="eyebrow">Create and update</span>
-                    <h2>Seller listing manager</h2>
-                  </div>
-                </div>
-
-                <form className="listing-form" onSubmit={handleCreateDraft}>
-                  <label>
-                    <span>Game title</span>
-                    <input
-                      type="text"
-                      value={draftForm.title}
-                      onChange={(event) => setDraftForm({ ...draftForm, title: event.target.value })}
-                      placeholder="New indie release"
-                    />
-                  </label>
-                  <label>
-                    <span>Genre</span>
-                    <select value={draftForm.genre} onChange={(event) => setDraftForm({ ...draftForm, genre: event.target.value })}>
-                      {genreOptions.filter((genre) => genre !== 'All').map((genre) => (
-                        <option key={genre} value={genre}>
-                          {genre}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    <span>Price</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={draftForm.price}
-                      onChange={(event) => setDraftForm({ ...draftForm, price: event.target.value })}
-                      placeholder="12.99"
-                    />
-                  </label>
-
-                  <button type="submit" className="cta primary block">
-                    Add listing
-                  </button>
-                </form>
-
-                <div className="crud-list">
-                  {market.draftGames.map((game) => (
-                    <article key={game.id} className="crud-card">
-                      <div className="crud-main">
-                        <input
-                          className="inline-title"
-                          value={game.title}
-                          onChange={(event) => dispatch(updateDraftGame({ id: game.id, changes: { title: event.target.value } }))}
-                        />
-                        <div className="crud-meta">
-                          <select
-                            value={game.genre}
-                            onChange={(event) => dispatch(updateDraftGame({ id: game.id, changes: { genre: event.target.value } }))}
-                          >
-                            {genreOptions.filter((genre) => genre !== 'All').map((genre) => (
-                              <option key={genre} value={genre}>
-                                {genre}
-                              </option>
-                            ))}
-                          </select>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={game.price}
-                            onChange={(event) => dispatch(updateDraftGame({ id: game.id, changes: { price: Number(event.target.value) } }))}
-                          />
-                          <button
-                            type="button"
-                            className={game.featured ? 'pill active' : 'pill'}
-                            onClick={() => dispatch(updateDraftGame({ id: game.id, changes: { featured: !game.featured } }))}
-                          >
-                            {game.featured ? 'Featured' : 'Feature it'}
-                          </button>
+                        <div className="tag-row compact">
+                          {(game.tags?.length ? game.tags : [game.genre]).slice(0, 3).map((tag) => (
+                            <span key={`${game._id}-${tag}`} className="pill static">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="price-stack">
+                          <strong>${getDiscountedPrice(game).toFixed(2)}</strong>
+                          <span>${game.price.toFixed(2)} · {getDiscountPercent(game)}% off</span>
                         </div>
                       </div>
-
-                      <div className="crud-actions">
-                        <span className={`status ${game.status.toLowerCase()}`}>{game.status}</span>
-                        <button type="button" className="icon-button danger" onClick={() => dispatch(deleteDraftGame(game.id))}>
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
                     </article>
-                  ))}
-                </div>
-              </article>
-
-              <aside className="panel info-rail">
-                <div className="section-heading compact">
-                  <div>
-                    <span className="eyebrow">Business logic</span>
-                    <h2>Company workflow</h2>
-                  </div>
-                </div>
-
-                <div className="workflow-list">
-                  <article>
-                    <strong>1. Publish</strong>
-                    <p>Sell games, add metadata, and create featured placements.</p>
-                  </article>
-                  <article>
-                    <strong>2. Collect</strong>
-                    <p>Prepare future payment, invoice, and cash-flow screens.</p>
-                  </article>
-                  <article>
-                    <strong>3. Optimize</strong>
-                    <p>Use analytics to improve conversion and user retention.</p>
-                  </article>
-                </div>
-              </aside>
+                  );
+                })}
+              </div>
             </section>
           )}
 
-          {activeView === 'analytics' && (
-            <section className="analytics-layout">
-              <article className="panel stats-panel">
-                <div className="section-heading compact">
-                  <div>
-                    <span className="eyebrow">Dashboard insights</span>
-                    <h2>Platform performance</h2>
-                  </div>
+          {activeView === 'detail' && selectedGame && (
+            <section className="detail-layout">
+              <article className="panel game-detail-hero">
+                <div className="game-detail-media">
+                  <img src={selectedGame.media?.cover?.trim() ? selectedGame.media.cover : buildPlaceholderCover(selectedGame.title)} alt={selectedGame.title} />
                 </div>
 
-                <div className="stats-grid">
-                  <article>
-                    <strong>$18.2k</strong>
-                    <span>Monthly gross sales</span>
-                  </article>
-                  <article>
-                    <strong>742</strong>
-                    <span>Orders completed</span>
-                  </article>
-                  <article>
-                    <strong>86%</strong>
-                    <span>Featured CTR</span>
-                  </article>
-                  <article>
-                    <strong>4.8/5</strong>
-                    <span>Average seller rating</span>
-                  </article>
-                </div>
-              </article>
-
-              <article className="panel timeline-panel">
-                <div className="section-heading compact">
-                  <div>
-                    <span className="eyebrow">Activity</span>
-                    <h2>Recent events</h2>
-                  </div>
-                </div>
-
-                <div className="timeline">
-                  <div>
-                    <strong>09:10</strong>
-                    <p>Seller requested a featured slot for Signal Grid.</p>
-                  </div>
-                  <div>
-                    <strong>11:20</strong>
-                    <p>Buyer purchased Ember Path and left a 5-star review.</p>
-                  </div>
-                  <div>
-                    <strong>14:35</strong>
-                    <p>The recommendation engine boosted puzzle games for 312 users.</p>
-                  </div>
-                </div>
-              </article>
-            </section>
-          )}
-
-          {activeView === 'blog' && (
-            <section className="grid-section blog-grid">
-              {blogPosts.map((post) => (
-                <article key={post.title} className="panel blog-card">
-                  <span className="eyebrow">{post.tag}</span>
-                  <h3>{post.title}</h3>
-                  <p>{post.blurb}</p>
-                  <button type="button" className="cta ghost compact">
-                    Read article
-                  </button>
-                </article>
-              ))}
-            </section>
-          )}
-
-          {activeView === 'contact' && (
-            <section className="two-column">
-              <article className="panel contact-card">
-                <div className="section-heading compact">
-                  <div>
-                    <span className="eyebrow">Get in touch</span>
-                    <h2>Contact and support</h2>
-                  </div>
-                </div>
-
-                <div className="contact-grid">
-                  <div>
-                    <div className="contact-row">
-                      <Mail size={16} /> support@gameforge.dev
-                    </div>
-                    <div className="contact-row">
-                      <Users size={16} /> +92 300 1234567
-                    </div>
-                    <div className="contact-row">
-                      <MapPin size={16} /> {companyProfile.city}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="support-copy">We help buyers with orders, sellers with listings, and partners with promotions.</p>
-                    <button type="button" className="cta primary">
-                      Start a support ticket
-                    </button>
-                  </div>
-                </div>
-              </article>
-
-              <article className="panel map-card">
-                <div className="section-heading compact">
-                  <div>
-                    <span className="eyebrow">Google location</span>
-                    <h2>Find our office</h2>
-                  </div>
-                </div>
-                <iframe
-                  title="GameForge office map"
-                  src="https://www.google.com/maps?q=Lahore%20Pakistan&output=embed"
-                  loading="lazy"
-                  referrerPolicy="no-referrer-when-downgrade"
-                />
-              </article>
-            </section>
-          )}
-
-          {activeView === 'profile' && (
-            <section className="two-column">
-              <article className="panel profile-card">
-                <div className="profile-avatar">{session.user?.avatar ?? companyProfile.avatar}</div>
-                <div>
-                  <span className="eyebrow">User profile</span>
-                  <h2>{session.user?.name ?? companyProfile.name}</h2>
-                  <p>{session.user?.bio ?? companyProfile.bio}</p>
-                </div>
-                <div className="profile-meta">
-                  <span>{session.user?.city ?? companyProfile.city}</span>
-                  <span>{session.user?.role ?? 'Guest'} account</span>
-                </div>
-                <div className="genre-pills profile-pills">
-                  {(session.user?.genres ?? companyProfile.genres).map((genre) => (
-                    <span key={genre} className="pill static">
-                      {genre}
-                    </span>
-                  ))}
-                </div>
-              </article>
-
-              <article className="panel social-card">
-                <div className="section-heading compact">
-                  <div>
-                    <span className="eyebrow">Social media</span>
-                    <h2>Stay connected</h2>
-                  </div>
-                </div>
-
-                <div className="social-list">
-                  {socialLinks.map((link) => (
-                    <a key={link.label} href={link.href} target="_blank" rel="noreferrer" className="social-link">
-                      <span>{link.label}</span>
-                      <strong>{link.handle}</strong>
-                    </a>
-                  ))}
-                </div>
-              </article>
-            </section>
-          )}
-
-          {activeView === 'game' && selectedGame && (
-            <section className="game-page-layout">
-              <article className="panel game-hero">
-                <div className="game-hero-media">
-                  <img src={selectedGame.media.cover} alt={selectedGame.title} />
-                </div>
-                <div className="game-hero-copy">
-                  <span className="eyebrow">{selectedGame.genre}</span>
+                <div className="game-detail-copy">
+                  <span className="eyebrow">Game page</span>
                   <h2>{selectedGame.title}</h2>
                   <p>{selectedGame.description}</p>
+
+                  <div className="tag-row">
+                    {(selectedGame.tags?.length ? selectedGame.tags : [selectedGame.genre]).map((tag) => (
+                      <span key={`${selectedGame._id}-${tag}`} className="pill static">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+
                   <div className="game-hero-meta">
                     <span>{selectedGame.studio}</span>
-                    <span><Star size={14} /> {selectedGame.rating}</span>
-                    <strong>${selectedGame.price.toFixed(2)}</strong>
+                    <span><Star size={14} /> {selectedGame.rating.toFixed(1)}</span>
+                    <strong>${getDiscountedPrice(selectedGame).toFixed(2)}</strong>
                   </div>
+                  <div className="price-stack compact">
+                    <span>${selectedGame.price.toFixed(2)} · {getDiscountPercent(selectedGame)}% off</span>
+                  </div>
+
                   <div className="hero-actions">
-                    <button type="button" className="cta primary">
-                      <ShoppingCart size={16} />
-                      Buy now
-                    </button>
-                    <button type="button" className="cta ghost" onClick={() => setActiveView('explore')}>
-                      Back to explore
+                    {role === 'buyer' && (
+                      <>
+                        <button
+                          type="button"
+                          className="cta primary"
+                          onClick={() => {
+                            if (!cartIds.includes(selectedGame._id)) {
+                              toggleCart(selectedGame._id);
+                            }
+                            setActiveView('cart');
+                          }}
+                        >
+                          <ShoppingCart size={16} />
+                          Buy with wallet
+                        </button>
+                        <button type="button" className="cta ghost" onClick={() => setActiveView('games')}>
+                          Back to browse
+                        </button>
+                      </>
+                    )}
+                    {role === 'seller' && !selectedGame.featured && (
+                      <button type="button" className="cta ghost" onClick={() => handleFeatureGame(selectedGame._id)}>
+                        <Sparkles size={16} />
+                        Feature for $15
+                      </button>
+                    )}
+                    <button type="button" className="cta ghost" onClick={goBackFromDetail}>
+                      Back
                     </button>
                   </div>
                 </div>
@@ -827,13 +881,13 @@ function App() {
               <article className="panel gallery-panel">
                 <div className="section-heading compact">
                   <div>
-                    <span className="eyebrow">More pics</span>
-                    <h2>Screenshot gallery</h2>
+                    <span className="eyebrow">Pictures</span>
+                    <h2>Game gallery</h2>
                   </div>
                 </div>
                 <div className="gallery-grid">
-                  {selectedGame.media.gallery.map((image, index) => (
-                    <figure key={`${selectedGame.id}-gallery-${index}`} className="gallery-card">
+                  {selectedGameGallery.map((image, index) => (
+                    <figure key={`${selectedGame._id}-gallery-${index}`} className="gallery-card">
                       <img src={image} alt={`${selectedGame.title} screenshot ${index + 1}`} />
                     </figure>
                   ))}
@@ -844,19 +898,432 @@ function App() {
                 <div className="section-heading compact">
                   <div>
                     <span className="eyebrow">About the game</span>
-                    <h2>What players get</h2>
+                    <h2>Seller tags and details</h2>
                   </div>
                 </div>
                 <div className="game-detail-columns">
                   <div>
-                    <p>Steam-like store page with title art, trailer-ready media slots, and more screenshot previews.</p>
-                    <p>Useful for buyers who want to inspect the game before purchase and for sellers who need a strong product page.</p>
+                    <p>{selectedGame.description}</p>
+                    <p>Tags are attached by the seller and shown here and in the carousel so buyers can spot the genre and style faster.</p>
                   </div>
                   <div className="game-detail-aside">
-                    <span className="pill static">Default data</span>
-                    <span className="pill static">Image gallery</span>
-                    <span className="pill static">Click-through page</span>
+                    {(selectedGame.tags?.length ? selectedGame.tags : [selectedGame.genre]).map((tag) => (
+                      <span key={`${selectedGame._id}-${tag}-aside`} className="pill static">
+                        {tag}
+                      </span>
+                    ))}
                   </div>
+                </div>
+              </article>
+
+              {role === 'seller' && ownGames.some((game) => game._id === selectedGame._id) && (
+                <article className="panel game-edit-panel">
+                  <div className="section-heading compact">
+                    <div>
+                      <span className="eyebrow">Seller edit</span>
+                      <h2>Edit listing details</h2>
+                    </div>
+                  </div>
+
+                  <form className="listing-form" onSubmit={handleUpdateGame}>
+                    <label>
+                      <span>Game title</span>
+                      <input type="text" value={gameEditForm.title} onChange={(event) => setGameEditForm({ ...gameEditForm, title: event.target.value })} />
+                    </label>
+                    <label>
+                      <span>Genre</span>
+                      <select value={gameEditForm.genre} onChange={(event) => setGameEditForm({ ...gameEditForm, genre: event.target.value })}>
+                        {genreOptions.filter((genre) => genre !== 'All').map((genre) => (
+                          <option key={genre} value={genre}>
+                            {genre}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Studio</span>
+                      <input type="text" value={gameEditForm.studio} onChange={(event) => setGameEditForm({ ...gameEditForm, studio: event.target.value })} />
+                    </label>
+                    <label>
+                      <span>Description</span>
+                      <textarea rows={4} value={gameEditForm.description} onChange={(event) => setGameEditForm({ ...gameEditForm, description: event.target.value })} />
+                    </label>
+                    <label>
+                      <span>Price</span>
+                      <input type="number" min="0" step="0.01" value={gameEditForm.price} onChange={(event) => setGameEditForm({ ...gameEditForm, price: event.target.value })} />
+                    </label>
+                    <label>
+                      <span>Discount percent</span>
+                      <select value={gameEditForm.discountPercent} onChange={(event) => setGameEditForm({ ...gameEditForm, discountPercent: event.target.value })}>
+                        {discountOptions.map((option) => (
+                          <option key={option} value={option}>
+                            {option}%
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Tags</span>
+                      <input type="text" value={gameEditForm.tags} onChange={(event) => setGameEditForm({ ...gameEditForm, tags: event.target.value })} />
+                    </label>
+                    <label>
+                      <span>Cover image URL</span>
+                      <input type="text" value={gameEditForm.coverImage} onChange={(event) => setGameEditForm({ ...gameEditForm, coverImage: event.target.value })} />
+                    </label>
+                    <label>
+                      <span>Gallery image URLs</span>
+                      <textarea rows={3} value={gameEditForm.galleryImages} onChange={(event) => setGameEditForm({ ...gameEditForm, galleryImages: event.target.value })} />
+                    </label>
+
+                    <label className="inline-toggle">
+                      <input type="checkbox" checked={gameEditForm.featured} onChange={(event) => setGameEditForm({ ...gameEditForm, featured: event.target.checked })} />
+                      <span>Featured listing</span>
+                    </label>
+
+                    <div className="hero-actions">
+                      <button type="submit" className="cta primary">
+                        Save changes
+                      </button>
+                      <button type="button" className="cta ghost" onClick={handleDeleteGame}>
+                        Remove listing
+                      </button>
+                    </div>
+                  </form>
+                </article>
+              )}
+            </section>
+          )}
+
+          {activeView === 'games' && role === 'buyer' && (
+            <section className="two-column">
+              <article className="panel">
+                <div className="section-heading">
+                  <div>
+                    <span className="eyebrow">Storefront</span>
+                    <h2>Browse games</h2>
+                  </div>
+                </div>
+
+                {gamesLoading && <p className="auth-message">Loading games...</p>}
+                {gamesError && <p className="auth-message error">{gamesError}</p>}
+
+                {!gamesLoading && !gamesError && filteredGames.length === 0 && (
+                  <div className="empty-state">
+                    <p>No games found.</p>
+                  </div>
+                )}
+
+                <div className="card-grid">
+                  {filteredGames.map((game) => {
+                    const cover = game.media?.cover?.trim() ? game.media.cover : buildPlaceholderCover(game.title);
+                    const inCart = cartIds.includes(game._id);
+                    const discountedPrice = getDiscountedPrice(game);
+
+                    return (
+                      <article key={game._id} className="game-card clickable" role="button" tabIndex={0} onClick={() => openGameDetail(game._id)}>
+                        <img src={cover} alt={game.title} className="game-card-image" />
+                        <div className="game-card-top">
+                          <span className="genre-tag">{game.genre}</span>
+                          {game.featured && <span className="featured-tag">Featured</span>}
+                        </div>
+                        <h3>{game.title}</h3>
+                        <p>{game.description}</p>
+                        <div className="tag-row compact">
+                          {(game.tags?.length ? game.tags : [game.genre]).slice(0, 3).map((tag) => (
+                            <span key={`${game._id}-${tag}`} className="pill static">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="game-card-meta">
+                          <span>{game.studio}</span>
+                          <strong>${discountedPrice.toFixed(2)}</strong>
+                        </div>
+                        <div className="price-stack compact">
+                          <span>${game.price.toFixed(2)} · {getDiscountPercent(game)}% off</span>
+                        </div>
+                        <div className="game-card-footer">
+                          <span>
+                            <Star size={14} /> {game.rating.toFixed(1)}
+                          </span>
+                          <button type="button" className={inCart ? 'cta ghost compact active' : 'cta ghost compact'} onClick={(event) => {
+                            event.stopPropagation();
+                            toggleCart(game._id);
+                          }}>
+                            <ShoppingCart size={14} />
+                            {inCart ? 'In cart' : 'Add to cart'}
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </article>
+
+              <aside className="panel recommendation-panel">
+                <div className="section-heading compact">
+                  <div>
+                    <span className="eyebrow">Quick checkout</span>
+                    <h2>Ready to pay?</h2>
+                  </div>
+                </div>
+                <p className="auth-message">Cart items use your wallet. Seller gets 80 percent, GameForge keeps 20 percent.</p>
+                <button type="button" className="cta primary block" onClick={() => setActiveView('cart')}>
+                  <ShoppingCart size={16} />
+                  Open cart
+                </button>
+                <div className="empty-state compact">
+                  <p>Wallet balance: ${walletBalance.toFixed(2)}</p>
+                </div>
+              </aside>
+            </section>
+          )}
+
+          {activeView === 'cart' && role === 'buyer' && (
+            <section className="two-column payment-layout">
+              <article className="panel">
+                <div className="section-heading">
+                  <div>
+                    <span className="eyebrow">Cart</span>
+                    <h2>Payment page</h2>
+                  </div>
+                </div>
+
+                {cartGames.length === 0 ? (
+                  <div className="empty-state">
+                    <p>Your cart is empty.</p>
+                  </div>
+                ) : (
+                  <div className="cart-list">
+                    {cartGames.map((game) => {
+                      const discountedPrice = getDiscountedPrice(game);
+
+                      return (
+                        <article key={game._id} className="cart-row">
+                          <div>
+                            <strong>{game.title}</strong>
+                            <p>{game.genre} · {game.studio}</p>
+                          </div>
+                          <div className="cart-row-actions">
+                            <strong>${discountedPrice.toFixed(2)}</strong>
+                            <span className="price-stack compact">
+                              <span>${game.price.toFixed(2)} · {getDiscountPercent(game)}% off</span>
+                            </span>
+                            <button type="button" className="icon-button danger" onClick={() => toggleCart(game._id)} title="Remove from cart">
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </article>
+
+              <aside className="panel payment-panel">
+                <div className="section-heading compact">
+                  <div>
+                    <span className="eyebrow">Wallet checkout</span>
+                    <h2>Pay from balance</h2>
+                  </div>
+                </div>
+
+                <div className="wallet-box">
+                  <span>Wallet balance</span>
+                  <strong>${walletBalance.toFixed(2)}</strong>
+                </div>
+                <div className="wallet-box">
+                  <span>Order total</span>
+                  <strong>${cartTotal.toFixed(2)}</strong>
+                </div>
+                <div className="wallet-box">
+                  <span>GameForge fee</span>
+                  <strong>${(cartTotal * 0.2).toFixed(2)}</strong>
+                </div>
+
+                {checkoutMessage && <p className={checkoutMessage.includes('complete') ? 'auth-message success' : 'auth-message error'}>{checkoutMessage}</p>}
+
+                <button type="button" className="cta primary block" disabled={!cartGames.length || cartTotal > walletBalance} onClick={handleCheckout}>
+                  Pay with wallet
+                </button>
+
+                <button type="button" className="cta ghost block" onClick={() => setActiveView('games')}>
+                  Back to games
+                </button>
+              </aside>
+            </section>
+          )}
+
+          {activeView === 'sell' && role === 'seller' && (
+            <section className="two-column">
+              <article className="panel">
+                <div className="section-heading">
+                  <div>
+                    <span className="eyebrow">Seller tools</span>
+                    <h2>Create a listing</h2>
+                  </div>
+                </div>
+
+                <form className="listing-form" onSubmit={handleCreateGame}>
+                  <label>
+                    <span>Game title</span>
+                    <input type="text" placeholder="New indie release" value={gameForm.title} onChange={(event) => setGameForm({ ...gameForm, title: event.target.value })} />
+                  </label>
+                  <label>
+                    <span>Genre</span>
+                    <select value={gameForm.genre} onChange={(event) => setGameForm({ ...gameForm, genre: event.target.value })}>
+                      {genreOptions.filter((genre) => genre !== 'All').map((genre) => (
+                        <option key={genre} value={genre}>
+                          {genre}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Studio</span>
+                    <input type="text" placeholder="Studio name" value={gameForm.studio} onChange={(event) => setGameForm({ ...gameForm, studio: event.target.value })} />
+                  </label>
+                  <label>
+                    <span>Description</span>
+                    <textarea rows={5} placeholder="Short game description" value={gameForm.description} onChange={(event) => setGameForm({ ...gameForm, description: event.target.value })} />
+                  </label>
+                  <label>
+                    <span>Price</span>
+                    <input type="number" min="0" step="0.01" placeholder="12.99" value={gameForm.price} onChange={(event) => setGameForm({ ...gameForm, price: event.target.value })} />
+                  </label>
+                  <label>
+                    <span>Discount percent</span>
+                    <select value={gameForm.discountPercent} onChange={(event) => setGameForm({ ...gameForm, discountPercent: event.target.value })}>
+                      {discountOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}%
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Tags</span>
+                    <input
+                      type="text"
+                      placeholder="Action, Cozy, Multiplayer"
+                      value={gameForm.tags}
+                      onChange={(event) => setGameForm({ ...gameForm, tags: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>Cover image URL</span>
+                    <input
+                      type="text"
+                      placeholder="https://..."
+                      value={gameForm.coverImage}
+                      onChange={(event) => setGameForm({ ...gameForm, coverImage: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>Gallery image URLs</span>
+                    <textarea
+                      rows={3}
+                      placeholder="https://... , https://..."
+                      value={gameForm.galleryImages}
+                      onChange={(event) => setGameForm({ ...gameForm, galleryImages: event.target.value })}
+                    />
+                  </label>
+
+                  {gameMessage && <p className={gameMessage.includes('saved') ? 'auth-message success' : 'auth-message error'}>{gameMessage}</p>}
+
+                  <button type="submit" className="cta primary block">
+                    <PlusCircle size={16} />
+                    Save listing
+                  </button>
+                </form>
+              </article>
+
+              <aside className="panel info-rail">
+                <div className="section-heading compact">
+                  <div>
+                    <span className="eyebrow">Your listings</span>
+                    <h2>Games from your seller account</h2>
+                  </div>
+                </div>
+
+                {ownGames.length ? (
+                  <div className="crud-list">
+                    {ownGames.map((game) => (
+                      <article key={game._id} className="crud-card clickable" role="button" tabIndex={0} onClick={() => openGameDetail(game._id)}>
+                        <div className="crud-main">
+                          <strong>{game.title}</strong>
+                          <div className="crud-meta">
+                            <span>{game.genre}</span>
+                            <span>${game.price.toFixed(2)}</span>
+                            <span className={game.featured ? 'pill active static' : 'pill static'}>{game.featured ? 'Featured' : 'Standard'}</span>
+                          </div>
+                        </div>
+                        <div className="crud-actions">
+                          <span className={`status ${game.featured ? 'live' : 'draft'}`}>{game.featured ? 'Live' : 'Draft'}</span>
+                          {!game.featured && (
+                            <button type="button" className="cta ghost compact" onClick={(event) => {
+                              event.stopPropagation();
+                              handleFeatureGame(game._id);
+                            }}>
+                              <Sparkles size={14} />
+                              Feature for $15
+                            </button>
+                          )}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-state">
+                    <p>No seller listings yet.</p>
+                  </div>
+                )}
+              </aside>
+            </section>
+          )}
+
+          {activeView === 'profile' && (
+            <section className="two-column">
+              <article className="panel profile-card">
+                <div className="profile-avatar">{session.user?.avatar ?? initials(sellerName)}</div>
+                <div>
+                  <span className="eyebrow">Account</span>
+                  <h2>{session.user?.name ?? sellerName}</h2>
+                  <p>{session.user?.bio || 'Logged in through the backend authentication flow.'}</p>
+                </div>
+                <div className="profile-meta">
+                  <span>{session.user?.email}</span>
+                  <span>{role} account</span>
+                </div>
+                <div className="wallet-box">
+                  <span>Wallet balance</span>
+                  <strong>${walletBalance.toFixed(2)}</strong>
+                </div>
+              </article>
+
+              <article className="panel">
+                <div className="section-heading compact">
+                  <div>
+                    <span className="eyebrow">Role rules</span>
+                    <h2>What you can do</h2>
+                  </div>
+                </div>
+                <div className="workflow-list">
+                  <article>
+                    <strong>Buyer</strong>
+                    <p>Can browse games, add to cart, edit discount settings, and pay from wallet balance only.</p>
+                  </article>
+                  <article>
+                    <strong>Seller</strong>
+                    <p>Can create listings and receive wallet credits after sales.</p>
+                  </article>
+                  <article>
+                    <strong>Cut</strong>
+                    <p>Every purchase sends 80 percent to the seller and 20 percent to GameForge.</p>
+                  </article>
+                </div>
+                <div className="empty-state compact">
+                  <p>{role === 'buyer' ? 'Buyers can edit account details only. Discounts are controlled by sellers on their game listings.' : 'Open one of your games to edit its details, discount, or remove it from the listing.'}</p>
                 </div>
               </article>
             </section>

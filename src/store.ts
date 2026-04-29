@@ -3,9 +3,11 @@ import { configureStore, createSlice, type PayloadAction } from '@reduxjs/toolki
 export type UserRole = 'buyer' | 'seller';
 
 export interface UserProfile {
+  id: string;
   name: string;
   email: string;
   role: UserRole;
+  walletBalance: number;
   city: string;
   bio: string;
   avatar: string;
@@ -43,16 +45,8 @@ interface MarketState {
 const sessionSlice = createSlice({
   name: 'session',
   initialState: {
-    isAuthenticated: true,
-    user: {
-      name: 'Amina Rahman',
-      email: 'amina@gameforge.dev',
-      role: 'seller',
-      city: 'Lahore, Pakistan',
-      bio: 'Indie publisher and marketplace curator who features standout studios.',
-      avatar: 'AR',
-      genres: ['Action', 'Narrative', 'Puzzle'],
-    },
+    isAuthenticated: false,
+    user: null,
   } as SessionState,
   reducers: {
     login(state, action: PayloadAction<UserProfile>) {
@@ -81,44 +75,8 @@ const marketSlice = createSlice({
   initialState: {
     searchQuery: '',
     activeGenre: 'All',
-    notifications: [
-      {
-        id: 'featured-1',
-        title: 'Your game feature request was approved',
-        detail: 'Signal Grid will appear on the featured row for 72 hours.',
-        tone: 'success',
-      },
-      {
-        id: 'sale-1',
-        title: 'Weekly payout ready',
-        detail: 'Your seller balance is ready for transfer this Friday.',
-        tone: 'info',
-      },
-      {
-        id: 'review-1',
-        title: 'New review needs a response',
-        detail: 'A buyer left feedback on Ember Path and asked for a controller tip.',
-        tone: 'warning',
-      },
-    ] as NotificationItem[],
-    draftGames: [
-      {
-        id: 'draft-ember-2',
-        title: 'Ember Path: Deluxe Prototype',
-        genre: 'Action',
-        price: 14.99,
-        featured: true,
-        status: 'Live',
-      },
-      {
-        id: 'draft-sky-1',
-        title: 'Skyline Notes',
-        genre: 'Narrative',
-        price: 8.5,
-        featured: false,
-        status: 'Draft',
-      },
-    ] as DraftGame[],
+    notifications: [] as NotificationItem[],
+    draftGames: [] as DraftGame[],
   } as MarketState,
   reducers: {
     setSearchQuery(state, action: PayloadAction<string>) {

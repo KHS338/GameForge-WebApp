@@ -59,92 +59,7 @@ export const navigationItems: Array<{ key: ViewKey; label: string; description: 
 
 export const genreOptions = ['All', 'Action', 'Adventure', 'Puzzle', 'Roguelike', 'Narrative', 'Strategy', 'Simulation'];
 
-export const featuredGames: GameListing[] = [
-  {
-    id: 'ember-path',
-    title: 'Ember Path',
-    genre: 'Action',
-    studio: 'Northlight Forge',
-    price: 14.99,
-    featured: true,
-    rating: 4.9,
-    description: 'A neon action roguelite where every room reshapes the route forward.',
-    media: {
-      cover: makeArtwork('Ember Path', ['#1b1530', '#22c7a8', '#ffb347']),
-      gallery: createGallery('Ember Path', ['#1b1530', '#22c7a8', '#ffb347']),
-    },
-  },
-  {
-    id: 'paper-skyline',
-    title: 'Paper Skyline',
-    genre: 'Narrative',
-    studio: 'Folded Moon',
-    price: 9.5,
-    featured: false,
-    rating: 4.7,
-    description: 'A quiet city story about rebuilding a neighborhood after the last storm.',
-    media: {
-      cover: makeArtwork('Paper Skyline', ['#0f243d', '#6d9aff', '#98accb']),
-      gallery: createGallery('Paper Skyline', ['#0f243d', '#6d9aff', '#98accb']),
-    },
-  },
-  {
-    id: 'signal-grid',
-    title: 'Signal Grid',
-    genre: 'Puzzle',
-    studio: 'Vector Room',
-    price: 11.25,
-    featured: true,
-    rating: 4.8,
-    description: 'Route light, unlock terminals, and solve the network before the timer expires.',
-    media: {
-      cover: makeArtwork('Signal Grid', ['#07111f', '#ffb347', '#22c7a8']),
-      gallery: createGallery('Signal Grid', ['#07111f', '#ffb347', '#22c7a8']),
-    },
-  },
-  {
-    id: 'harbor-13',
-    title: 'Harbor 13',
-    genre: 'Adventure',
-    studio: 'Saltline Studios',
-    price: 18,
-    featured: false,
-    rating: 4.6,
-    description: 'Explore a broken port city where every choice changes which dock opens next.',
-    media: {
-      cover: makeArtwork('Harbor 13', ['#12283d', '#3fa7d6', '#0f1728']),
-      gallery: createGallery('Harbor 13', ['#12283d', '#3fa7d6', '#0f1728']),
-    },
-  },
-  {
-    id: 'cinder-ops',
-    title: 'Cinder Ops',
-    genre: 'Strategy',
-    studio: 'Iron Orchard',
-    price: 19.99,
-    featured: true,
-    rating: 4.8,
-    description: 'Manage a squad of scrapyard engineers and turn salvaged parts into victory.',
-    media: {
-      cover: makeArtwork('Cinder Ops', ['#24110f', '#ff6d6d', '#ffb347']),
-      gallery: createGallery('Cinder Ops', ['#24110f', '#ff6d6d', '#ffb347']),
-    },
-  },
-  {
-    id: 'luma-farm',
-    title: 'Luma Farm',
-    genre: 'Simulation',
-    studio: 'Bright Acre',
-    price: 12.75,
-    featured: false,
-    rating: 4.5,
-    description: 'Grow glowing crops, trade rare seeds, and decorate a solar-powered homestead.',
-    media: {
-      cover: makeArtwork('Luma Farm', ['#10281d', '#6df7dd', '#ffb347']),
-      gallery: createGallery('Luma Farm', ['#10281d', '#6df7dd', '#ffb347']),
-    },
-  },
-];
+// Original data - now using basic placeholders instead
 
 export const blogPosts = [
   {
@@ -186,19 +101,63 @@ export const companyProfile = {
   genres: ['Action', 'Narrative', 'Puzzle'],
 };
 
+// Placeholder featured games with basic data
+export const featuredGames: GameListing[] = [
+  {
+    id: 'game-1',
+    title: 'Game Title 1',
+    genre: 'Action',
+    studio: 'Studio Name',
+    price: 9.99,
+    featured: true,
+    rating: 4.5,
+    description: 'A placeholder game description.',
+    media: {
+      cover: makeArtwork('Game 1', ['#1b1530', '#22c7a8', '#ffb347']),
+      gallery: createGallery('Game 1', ['#1b1530', '#22c7a8', '#ffb347']),
+    },
+  },
+  {
+    id: 'game-2',
+    title: 'Game Title 2',
+    genre: 'Adventure',
+    studio: 'Studio Name',
+    price: 14.99,
+    featured: false,
+    rating: 4.3,
+    description: 'A placeholder game description.',
+    media: {
+      cover: makeArtwork('Game 2', ['#0f243d', '#6d9aff', '#98accb']),
+      gallery: createGallery('Game 2', ['#0f243d', '#6d9aff', '#98accb']),
+    },
+  },
+  {
+    id: 'game-3',
+    title: 'Game Title 3',
+    genre: 'Puzzle',
+    studio: 'Studio Name',
+    price: 7.99,
+    featured: true,
+    rating: 4.7,
+    description: 'A placeholder game description.',
+    media: {
+      cover: makeArtwork('Game 3', ['#07111f', '#ffb347', '#22c7a8']),
+      gallery: createGallery('Game 3', ['#07111f', '#ffb347', '#22c7a8']),
+    },
+  },
+];
+
 export function buildRecommendations(preferredGenres: string[], searchQuery: string) {
   const query = searchQuery.trim().toLowerCase();
-
   return featuredGames
     .map((game) => {
-      const genreBoost = preferredGenres.includes(game.genre) ? 3 : 0;
-      const featureBoost = game.featured ? 2 : 0;
-      const queryBoost = query && `${game.title} ${game.studio} ${game.genre}`.toLowerCase().includes(query) ? 4 : 0;
-      return {
-        ...game,
-        score: genreBoost + featureBoost + queryBoost + game.rating,
-      };
+      let score = 0;
+      if (preferredGenres.includes(game.genre)) score += 3;
+      if (game.title.toLowerCase().includes(query)) score += 2;
+      if (game.description.toLowerCase().includes(query)) score += 1;
+      return { ...game, score };
     })
+    .filter((game) => game.score > 0)
     .sort((left, right) => right.score - left.score)
     .slice(0, 3);
 }

@@ -71,6 +71,219 @@ iframe {
   padding: 22px 0 30px;
 }
 
+.auth-screen {
+  position: relative;
+  min-height: 100vh;
+  width: 100%;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  overflow: hidden;
+}
+
+.auth-shell {
+  position: relative;
+  z-index: 1;
+  width: min(1120px, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.auth-copy {
+  padding: 30px;
+  gap: 18px;
+}
+
+.auth-copy h1 {
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: clamp(2.1rem, 4vw, 4.1rem);
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+  max-width: 12ch;
+}
+
+.auth-copy p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.65;
+  max-width: 58ch;
+}
+
+.auth-points {
+  display: grid;
+  gap: 12px;
+}
+
+.auth-point {
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.auth-point strong {
+  display: block;
+  margin-bottom: 4px;
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.auth-point span,
+.auth-message,
+.auth-summary p,
+.empty-state p {
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.55;
+}
+
+.auth-message {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.auth-message.error {
+  color: #ffc6c6;
+  background: rgba(255, 109, 109, 0.12);
+}
+
+.auth-message.success {
+  color: #ccfff2;
+  background: rgba(34, 199, 168, 0.12);
+}
+
+.auth-panel-loading {
+  padding: 26px;
+  min-height: 100%;
+  display: grid;
+  align-content: center;
+  gap: 12px;
+}
+
+.auth-summary {
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.role-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  text-transform: capitalize;
+}
+
+.empty-state {
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.empty-state.compact {
+  padding: 12px;
+}
+
+.detail-cover {
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 12px;
+}
+
+.detail-cover img {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+}
+
+.gallery-preview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.gallery-preview img {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.featured-strip {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 18px;
+}
+
+.featured-carousel {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(240px, 320px);
+  gap: 14px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  scroll-snap-type: x proximity;
+}
+
+.featured-slide {
+  scroll-snap-align: start;
+  overflow: hidden;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  min-height: 420px;
+}
+
+.featured-slide img {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+}
+
+.featured-slide-copy {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+}
+
+.featured-slide-copy span {
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.featured-slide-copy h3,
+.featured-slide-copy p,
+.featured-slide-copy strong {
+  margin: 0;
+}
+
+.featured-slide-copy strong {
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.game-card.active {
+  outline: 2px solid rgba(109, 247, 221, 0.32);
+}
+
+.panel-inner.auth-panel-loading,
+.panel-inner.auth-summary {
+  background: rgba(7, 15, 28, 0.42);
+}
+
 .ambient {
   position: fixed;
   inset: auto;
@@ -458,6 +671,18 @@ iframe {
   cursor: pointer;
 }
 
+.featured-slide:hover,
+.game-card.clickable:hover {
+  border-color: rgba(109, 247, 221, 0.3);
+}
+
+.featured-slide:focus,
+.game-card.clickable:focus,
+.crud-card.clickable:focus {
+  outline: 2px solid rgba(109, 247, 221, 0.35);
+  outline-offset: 2px;
+}
+
 .featured-slide img,
 .game-card-image,
 .game-hero-media img,
@@ -485,6 +710,87 @@ iframe {
 }
 
 .featured-slide-copy p {
+  color: var(--muted);
+}
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-row.compact .pill.static {
+  min-height: 30px;
+  padding: 0 10px;
+}
+
+.price-stack {
+  display: grid;
+  gap: 4px;
+}
+
+.price-stack strong {
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.price-stack span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.discount-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.discount-form label {
+  display: grid;
+  gap: 8px;
+}
+
+.discount-form span {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.discount-form input,
+.discount-form select {
+  min-height: 48px;
+  width: 100%;
+  padding: 0 14px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  outline: none;
+}
+
+.discount-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.discount-list {
+  display: grid;
+  gap: 10px;
+}
+
+.discount-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.discount-item p {
+  margin: 4px 0 0;
   color: var(--muted);
 }
 
@@ -589,8 +895,10 @@ iframe {
 
 .auth-form input,
 .auth-form select,
+.auth-form textarea,
 .listing-form input,
 .listing-form select,
+.listing-form textarea,
 .crud-card input,
 .crud-card select {
   min-height: 48px;
@@ -601,6 +909,13 @@ iframe {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 14px;
   outline: none;
+}
+
+.auth-form textarea,
+.listing-form textarea {
+  min-height: 132px;
+  padding: 14px;
+  resize: vertical;
 }
 
 .grid-section {
@@ -646,6 +961,91 @@ iframe {
 .card-header.compact,
 .section-heading.compact {
   justify-content: flex-start;
+}
+
+.wallet-chip {
+  gap: 8px;
+}
+
+.wallet-chip strong {
+  color: var(--accent-strong);
+}
+
+.wallet-box,
+.cart-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.wallet-box span,
+.cart-row p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.cart-list,
+.payment-panel,
+.cart-row-actions {
+  display: grid;
+  gap: 12px;
+}
+
+.cart-row-actions {
+  justify-items: end;
+}
+
+.payment-layout {
+  align-items: start;
+}
+
+.game-card .cta.active {
+  border-color: rgba(109, 247, 221, 0.4);
+  background: rgba(109, 247, 221, 0.16);
+}
+
+.game-card {
+  display: grid;
+  gap: 10px;
+}
+
+.crud-card.clickable {
+  cursor: pointer;
+}
+
+.detail-layout {
+  display: grid;
+  gap: 18px;
+}
+
+.game-detail-hero {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr);
+  gap: 18px;
+  padding: 18px;
+}
+
+.game-detail-media img {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  border-radius: 22px;
+}
+
+.game-detail-copy {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.game-detail-copy h2 {
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: clamp(2rem, 4vw, 3.4rem);
 }
 
 .section-heading {
@@ -885,7 +1285,9 @@ iframe {
   .layout,
   .hero,
   .game-hero,
+  .game-detail-hero,
   .two-column,
+  .auth-shell,
   .analytics-layout,
   .contact-grid {
     grid-template-columns: 1fr;
@@ -900,6 +1302,10 @@ iframe {
   .blog-grid,
   .gallery-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .detail-layout {
+    gap: 14px;
   }
 
   .topbar {
@@ -917,10 +1323,19 @@ iframe {
     padding-top: 10px;
   }
 
+  .auth-screen {
+    padding: 10px;
+  }
+
   .topbar {
     gap: 12px;
     padding: 14px;
     grid-template-columns: auto 1fr auto;
+  }
+
+  .auth-copy,
+  .auth-panel {
+    padding: 18px;
   }
 
   .search-field {
@@ -950,8 +1365,13 @@ iframe {
   .card-grid,
   .blog-grid,
   .gallery-grid,
+  .detail-layout,
   .stats-grid,
   .contact-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .game-detail-hero {
     grid-template-columns: 1fr;
   }
 
