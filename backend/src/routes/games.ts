@@ -1,6 +1,7 @@
 import express from 'express';
 import { Game } from '../models/Game.js';
 import { User } from '../models/User.js';
+import { Transaction } from '../models/Transaction.js';
 import { verifyToken, AuthRequest } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -10,7 +11,7 @@ router.get('/', async (req, res) => {
   try {
     const { genre, featured, search } = req.query;
     console.log(`📚 GET /games - genre: ${genre || 'all'}, featured: ${featured || 'no'}, search: ${search || 'none'}`);
-    const filter: any = {};
+    const filter: any = { published: true };
 
     if (featured === 'true') {
       filter.featured = true;
@@ -39,10 +40,21 @@ router.get('/', async (req, res) => {
 // Get featured games
 router.get('/featured', async (_req, res) => {
   try {
-    const games = await Game.find({ featured: true }).populate('sellerId', 'username');
+    const games = await Game.find({ featured: true, published: true }).populate('sellerId', 'username');
     res.json(games);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching featured games', error });
+  }
+});
+
+// Get all unique tags
+router.get('/tags/all', async (_req, res) => {
+  try {
+    const games = await Game.find({ tags: { $exists: true, $ne: [] } }, { tags: 1 });
+    const uniqueTags = Array.from(new Set(games.flatMap((game) => game.tags || [])));
+    res.json({ tags: uniqueTags.sort() });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching tags', error });
   }
 });
 
@@ -144,7 +156,17 @@ router.post('/:id/purchase', verifyToken, async (req: AuthRequest, res) => {
 
     game.downloads = (game.downloads ?? 0) + 1;
 
-    await Promise.all([buyer.save(), seller.save(), game.save()]);
+    const transaction = new Transaction({
+      sellerId: seller._id,
+      type: 'sale',
+      gameId: game._id,
+      buyerId: buyer._id,
+      amount: sellerCredit,
+      platformCut: platformCut,
+      totalPrice: discountedPrice,
+    });
+
+    await Promise.all([buyer.save(), seller.save(), game.save(), transaction.save()]);
 
     const updatedGame = await Game.findById(game._id).populate('sellerId', 'username');
 
@@ -168,6 +190,7 @@ router.post('/:id/purchase', verifyToken, async (req: AuthRequest, res) => {
 });
 
 // Feature a game using seller wallet
+// Feature a game using seller wallet (7 days for $15)
 router.post('/:id/feature', verifyToken, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
@@ -189,8 +212,13 @@ router.post('/:id/feature', verifyToken, async (req: AuthRequest, res) => {
       return res.status(403).json({ message: 'You can only feature your own games' });
     }
 
-    if (game.featured) {
-      return res.json({ message: 'Game is already featured', game });
+    // Check if already featured and not expired
+    if (game.featureExpiresAt && new Date() < game.featureExpiresAt) {
+      return res.json({
+        message: 'Game is already featured',
+        game,
+        featureExpiresAt: game.featureExpiresAt,
+      });
     }
 
     const seller = await User.findById(sellerId);
@@ -206,18 +234,29 @@ router.post('/:id/feature', verifyToken, async (req: AuthRequest, res) => {
 
     seller.walletBalance = Number(((seller.walletBalance ?? 0) - featureFee).toFixed(2));
     game.featured = true;
+    // Set feature expiration to 7 days from now
+    game.featureExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-    await Promise.all([seller.save(), game.save()]);
+    const transaction = new Transaction({
+      sellerId: seller._id,
+      type: 'feature_fee',
+      gameId: game._id,
+      amount: -featureFee,
+      totalPrice: featureFee,
+    });
+
+    await Promise.all([seller.save(), game.save(), transaction.save()]);
 
     const updatedGame = await Game.findById(game._id).populate('sellerId', 'username');
 
-    console.log(`⭐ Game featured - game: ${game.title}, seller: ${seller.email}, fee: $${featureFee}`);
+    console.log(`⭐ Game featured - game: ${game.title}, seller: ${seller.email}, fee: $${featureFee}, expires: ${game.featureExpiresAt}`);
 
     res.json({
-      message: 'Game featured successfully',
+      message: 'Game featured successfully for 7 days',
       game: updatedGame,
       walletBalance: seller.walletBalance,
       featureFee,
+      featureExpiresAt: updatedGame?.featureExpiresAt,
     });
   } catch (error) {
     console.error('✗ Error featuring game:', error);

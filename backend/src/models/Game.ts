@@ -29,6 +29,14 @@ const gameSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+      featureExpiresAt: {
+        type: Date,
+        default: null,
+      },
+    published: {
+      type: Boolean,
+      default: true,
+    },
     discountPercent: {
       type: Number,
       default: 0,

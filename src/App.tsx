@@ -12,15 +12,17 @@ import {
   Sparkles,
   Star,
   Trash2,
+  ArrowLeft,
+  DollarSign,
 } from 'lucide-react';
-import { authApi, clearToken, gamesApi, getToken, type ApiGame, type ApiUser, type CreateGamePayload } from './api';
+import { authApi, clearToken, gamesApi, transactionsApi, adminApi, getToken, type ApiGame, type ApiUser, type CreateGamePayload, type ApiTransaction } from './api';
 import { genreOptions } from './data';
 import { login, logout, type RootState, type UserProfile } from './store';
 
-type AuthMode = 'login' | 'signup';
-type ViewKey = 'home' | 'games' | 'sell' | 'profile' | 'cart' | 'payment' | 'detail';
+type AuthMode = 'login' | 'signup' | 'admin-login';
+type ViewKey = 'home' | 'games' | 'sell' | 'profile' | 'cart' | 'payment' | 'detail' | 'library' | 'sales' | 'admin';
 
-type Role = 'buyer' | 'seller';
+type Role = 'buyer' | 'seller' | 'admin';
 
 const emptyAuthForm: { name: string; email: string; password: string; role: Role } = {
   name: '',
@@ -35,16 +37,17 @@ const emptyGameForm = {
   studio: '',
   description: '',
   price: '',
-  tags: '',
+  tags: [] as string[],
   coverImage: '',
-  galleryImages: '',
+  galleryImages: [] as string[],
   discountPercent: '0',
 };
 
 const discountOptions = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 
-const buyerViews: ViewKey[] = ['home', 'games', 'cart', 'profile'];
-const sellerViews: ViewKey[] = ['home', 'sell', 'profile'];
+const buyerViews: ViewKey[] = ['home', 'games', 'library', 'cart', 'profile'];
+const sellerViews: ViewKey[] = ['home', 'sell', 'sales', 'profile'];
+const adminViews: ViewKey[] = ['home', 'admin', 'profile'];
 
 function initials(value: string) {
   const parts = value.trim().split(/\s+/).filter(Boolean);
@@ -88,12 +91,14 @@ function mapUser(user: ApiUser): UserProfile {
     id: user._id,
     name: user.username,
     email: user.email,
-    role: user.role === 'seller' ? 'seller' : 'buyer',
+    role: user.role === 'admin' ? 'admin' : user.role === 'seller' ? 'seller' : 'buyer',
     walletBalance: user.walletBalance ?? 0,
     city: '',
     bio: user.bio ?? '',
     avatar: user.avatar ?? initials(user.username),
     genres: ['Action', 'Adventure', 'Puzzle'],
+    purchases: user.purchases ?? [],
+    listings: user.listings ?? [],
   };
 }
 
@@ -106,6 +111,16 @@ function getDiscountedPrice(game: ApiGame) {
   return Number((game.price * (1 - percent / 100)).toFixed(2));
 }
 
+function isGameCurrentlyFeatured(game: ApiGame) {
+  if (!game.featureExpiresAt) return false;
+  return new Date() < new Date(game.featureExpiresAt);
+}
+
+function getFeatureExpiryDate(game: ApiGame) {
+  if (!game.featureExpiresAt) return null;
+  const date = new Date(game.featureExpiresAt);
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
 function App() {
   const dispatch = useDispatch();
   const session = useSelector((state: RootState) => state.session);
@@ -120,9 +135,16 @@ function App() {
   const [gamesLoading, setGamesLoading] = useState(false);
   const [gamesError, setGamesError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedGenre, setSelectedGenre] = useState<string>('All');
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [cartIds, setCartIds] = useState<string[]>([]);
   const [checkoutMessage, setCheckoutMessage] = useState<string | null>(null);
   const [gameMessage, setGameMessage] = useState<string | null>(null);
+  const [profileMessage, setProfileMessage] = useState<string | null>(null);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [editProfileForm, setEditProfileForm] = useState({ name: '', bio: '' });
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [gameForm, setGameForm] = useState(emptyGameForm);
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
   const [gameEditForm, setGameEditForm] = useState({
@@ -131,29 +153,65 @@ function App() {
     studio: '',
     description: '',
     price: '',
-    tags: '',
+    tags: [] as string[],
     coverImage: '',
-    galleryImages: '',
+    galleryImages: [] as string[],
     discountPercent: '0',
-    featured: false,
+    published: true,
   });
+  const [tagInput, setTagInput] = useState('');
+  const [galleryInput, setGalleryInput] = useState('');
+  const [createTagInput, setCreateTagInput] = useState('');
+  const [createGalleryInput, setCreateGalleryInput] = useState('');
+
+  // Transaction State
+  const [transactions, setTransactions] = useState<ApiTransaction[]>([]);
+  const [transactionsLoading, setTransactionsLoading] = useState(false);
+  const [transactionFilters, setTransactionFilters] = useState({
+    startDate: '',
+    endDate: '',
+    gameId: '',
+  });
+
+  // Admin State
+  const [adminTransactions, setAdminTransactions] = useState<ApiTransaction[]>([]);
+  const [adminTransactionsLoading, setAdminTransactionsLoading] = useState(false);
+  const [adminTransactionFilters, setAdminTransactionFilters] = useState({
+    startDate: '',
+    endDate: '',
+    gameName: '',
+    category: '',
+    userId: '',
+  });
+  const [allUsers, setAllUsers] = useState<ApiUser[]>([]);
+  const [allUsersLoading, setAllUsersLoading] = useState(false);
+  const [topUpUserId, setTopUpUserId] = useState('');
+  const [topUpAmount, setTopUpAmount] = useState('');
+  const [topUpMessage, setTopUpMessage] = useState<string | null>(null);
+
   const featuredGames = useMemo(() => games.filter((game) => game.featured), [games]);
 
   const role = session.user?.role ?? 'buyer';
-  const navItems = role === 'seller' ? sellerViews : buyerViews;
+  const navItems = role === 'admin' ? adminViews : (role === 'seller' ? sellerViews : buyerViews);
   const cartGames = useMemo(() => games.filter((game) => cartIds.includes(game._id)), [cartIds, games]);
   const cartTotal = useMemo(() => cartGames.reduce((sum, game) => sum + getDiscountedPrice(game), 0), [cartGames]);
   const selectedGame = useMemo(() => games.find((game) => game._id === selectedGameId) ?? null, [games, selectedGameId]);
   const filteredGames = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     return games.filter((game) => {
-      if (!query) {
-        return true;
+      // Check genre filter
+      if (selectedGenre !== 'All' && game.genre !== selectedGenre) {
+        return false;
       }
 
-      return `${game.title} ${game.genre} ${game.studio}`.toLowerCase().includes(query);
+      // Check search query
+      if (query && !`${game.title} ${game.genre} ${game.studio}`.toLowerCase().includes(query)) {
+        return false;
+      }
+
+      return true;
     });
-  }, [games, searchQuery]);
+  }, [games, searchQuery, selectedGenre]);
   const ownGames = useMemo(() => {
     if (!session.user) {
       return [] as ApiGame[];
@@ -177,6 +235,87 @@ function App() {
     const cover = selectedGame.media?.cover?.trim() ? selectedGame.media.cover : buildPlaceholderCover(selectedGame.title);
     return [cover, buildPlaceholderCover(`${selectedGame.title} 2`), buildPlaceholderCover(`${selectedGame.title} 3`)];
   }, [selectedGame]);
+
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+
+  useEffect(() => {
+    // reset main image when changing games
+    setSelectedImageIndex(0);
+  }, [selectedGame]);
+
+  useEffect(() => {
+    if (!selectedGameGallery || selectedGameGallery.length <= 1) return;
+    const id = setInterval(() => {
+      setSelectedImageIndex((i) => (i + 1) % selectedGameGallery.length);
+    }, 3000);
+    return () => clearInterval(id);
+  }, [selectedGameGallery]);
+
+  // Achievement system
+  const purchasedGames = useMemo(() => {
+    if (typeof session.user?.purchases === 'string') return [];
+    return (session.user?.purchases ?? []).filter(Boolean) as any[];
+  }, [session.user?.purchases]);
+
+  const totalSpent = useMemo(() => {
+    return purchasedGames.reduce((sum, game) => {
+      const gamePrice = typeof game === 'object' && game?.price ? game.price : 0;
+      return sum + gamePrice;
+    }, 0);
+  }, [purchasedGames]);
+
+  interface Achievement {
+    id: string;
+    title: string;
+    description: string;
+    icon: string;
+    unlocked: boolean;
+  }
+
+  const achievements: Achievement[] = useMemo(() => [
+    {
+      id: 'first-game',
+      title: 'First Game',
+      description: 'Purchase your first game',
+      icon: '🎮',
+      unlocked: purchasedGames.length >= 1,
+    },
+    {
+      id: 'collector',
+      title: 'Collector',
+      description: 'Own 5+ games',
+      icon: '📚',
+      unlocked: purchasedGames.length >= 5,
+    },
+    {
+      id: 'gaming-enthusiast',
+      title: 'Gaming Enthusiast',
+      description: 'Own 10+ games',
+      icon: '⭐',
+      unlocked: purchasedGames.length >= 10,
+    },
+    {
+      id: 'spender-100',
+      title: 'Big Spender',
+      description: 'Spend $100',
+      icon: '💰',
+      unlocked: totalSpent >= 100,
+    },
+    {
+      id: 'spender-500',
+      title: 'Gold Buyer',
+      description: 'Spend $500',
+      icon: '👑',
+      unlocked: totalSpent >= 500,
+    },
+    {
+      id: 'spender-1000',
+      title: 'Whale',
+      description: 'Spend $1000',
+      icon: '🐋',
+      unlocked: totalSpent >= 1000,
+    },
+  ], [purchasedGames.length, totalSpent]);
 
   useEffect(() => {
     let mounted = true;
@@ -242,12 +381,101 @@ function App() {
       }
     }
 
+    async function loadTags() {
+      try {
+        const tags = await gamesApi.getTags();
+        if (mounted) {
+          setAvailableTags(tags);
+        }
+      } catch (error) {
+        console.error('Could not load tags:', error);
+      }
+    }
+
     void loadGames();
+    void loadTags();
 
     return () => {
       mounted = false;
     };
   }, [session.isAuthenticated]);
+
+  useEffect(() => {
+    if (activeView !== 'sales' || role !== 'seller') {
+      return;
+    }
+
+    let mounted = true;
+
+    async function loadTransactions() {
+      setTransactionsLoading(true);
+      try {
+        const data = await transactionsApi.getSellerTransactions({
+          startDate: transactionFilters.startDate || undefined,
+          endDate: transactionFilters.endDate || undefined,
+          gameId: transactionFilters.gameId || undefined,
+        });
+        if (mounted) {
+          setTransactions(data);
+        }
+      } catch (error) {
+        console.error('Could not load transactions:', error);
+      } finally {
+        if (mounted) {
+          setTransactionsLoading(false);
+        }
+      }
+    }
+
+    void loadTransactions();
+
+    return () => {
+      mounted = false;
+    };
+  }, [activeView, role, transactionFilters]);
+
+  useEffect(() => {
+    if (activeView !== 'admin' || role !== 'admin') {
+      return;
+    }
+
+    let mounted = true;
+
+    async function loadAdminData() {
+      setAdminTransactionsLoading(true);
+      setAllUsersLoading(true);
+      try {
+        const [txData, usersData] = await Promise.all([
+          adminApi.getAllTransactions({
+            startDate: adminTransactionFilters.startDate || undefined,
+            endDate: adminTransactionFilters.endDate || undefined,
+            gameName: adminTransactionFilters.gameName || undefined,
+            category: adminTransactionFilters.category || undefined,
+            userId: adminTransactionFilters.userId || undefined,
+          }),
+          adminApi.getAllUsers()
+        ]);
+        
+        if (mounted) {
+          setAdminTransactions(txData);
+          setAllUsers(usersData);
+        }
+      } catch (error) {
+        console.error('Could not load admin data:', error);
+      } finally {
+        if (mounted) {
+          setAdminTransactionsLoading(false);
+          setAllUsersLoading(false);
+        }
+      }
+    }
+
+    void loadAdminData();
+
+    return () => {
+      mounted = false;
+    };
+  }, [activeView, role, adminTransactionFilters]);
 
   useEffect(() => {
     if (role === 'buyer' && activeView === 'sell') {
@@ -279,14 +507,25 @@ function App() {
         studio: selectedGame.studio,
         description: selectedGame.description,
         price: String(selectedGame.price),
-        tags: (selectedGame.tags ?? []).join(', '),
+        tags: selectedGame.tags ?? [],
         coverImage: selectedGame.media?.cover ?? '',
-        galleryImages: (selectedGame.media?.gallery ?? []).join(', '),
+        galleryImages: selectedGame.media?.gallery ?? [],
         discountPercent: String(selectedGame.discountPercent ?? 0),
-        featured: selectedGame.featured,
+        published: selectedGame.published ?? true,
       });
+      setTagInput('');
+      setGalleryInput('');
     }
   }, [selectedGame]);
+
+  useEffect(() => {
+    if (gameMessage && gameMessage.includes('saved')) {
+      const timer = setTimeout(() => {
+        setGameMessage(null);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [gameMessage]);
 
   const handleAuthSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -295,11 +534,17 @@ function App() {
 
     try {
       if (authMode === 'signup') {
-        if (!authForm.name.trim()) {
-          throw new Error('Username is required');
+        if (!authForm.name.trim() || !authForm.email.trim() || !authForm.password) {
+          throw new Error('All fields are required');
         }
 
         const result = await authApi.register(authForm.email.trim(), authForm.name.trim(), authForm.password, authForm.role);
+        dispatch(login(mapUser(result.user)));
+      } else if (authMode === 'admin-login') {
+        if (!authForm.name.trim()) {
+          throw new Error('Admin username is required');
+        }
+        const result = await adminApi.adminLogin(authForm.name.trim(), authForm.password);
         dispatch(login(mapUser(result.user)));
       } else {
         const result = await authApi.login(authForm.email.trim(), authForm.password);
@@ -326,6 +571,7 @@ function App() {
     setSearchQuery('');
     setCheckoutMessage(null);
     setGameMessage(null);
+    setAuthForm(emptyAuthForm);
   };
 
   const openGameDetail = (gameId: string) => {
@@ -341,6 +587,26 @@ function App() {
     setCartIds((current) => (current.includes(gameId) ? current.filter((id) => id !== gameId) : [...current, gameId]));
   };
 
+  const handleTopUp = async (e: FormEvent) => {
+    e.preventDefault();
+    setTopUpMessage(null);
+    if (!topUpUserId || !topUpAmount) {
+      setTopUpMessage('Please select a user and enter an amount.');
+      return;
+    }
+    
+    try {
+      const response = await adminApi.topUpUser(topUpUserId, Number(topUpAmount));
+      setTopUpMessage(response.message);
+      setTopUpAmount('');
+      
+      // Update local allUsers state
+      setAllUsers(current => current.map(u => u._id === response.user._id ? response.user : u));
+    } catch (error) {
+      setTopUpMessage(error instanceof Error ? error.message : 'Failed to top up user');
+    }
+  };
+
   const handleCreateGame = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setGameMessage(null);
@@ -354,14 +620,8 @@ function App() {
     const studio = gameForm.studio.trim();
     const description = gameForm.description.trim();
     const price = Number(gameForm.price);
-    const tags = gameForm.tags
-      .split(',')
-      .map((tag) => tag.trim())
-      .filter(Boolean);
-    const gallery = gameForm.galleryImages
-      .split(',')
-      .map((image) => image.trim())
-      .filter(Boolean);
+    const tags = gameForm.tags.filter(Boolean);
+    const gallery = gameForm.galleryImages.filter((img) => img.trim());
     const cover = gameForm.coverImage.trim();
     const discountPercent = Number(gameForm.discountPercent);
 
@@ -389,6 +649,8 @@ function App() {
       const nextGames = await gamesApi.getAll();
       setGames(nextGames);
       setGameForm(emptyGameForm);
+      setCreateTagInput('');
+      setCreateGalleryInput('');
       setGameMessage('Game saved to MongoDB.');
       setActiveView('sell');
     } catch (error) {
@@ -429,24 +691,21 @@ function App() {
         studio: gameEditForm.studio.trim(),
         description: gameEditForm.description.trim(),
         price: Number(gameEditForm.price),
-        featured: gameEditForm.featured,
+        published: gameEditForm.published,
         discountPercent: Number(gameEditForm.discountPercent),
-        tags: gameEditForm.tags
-          .split(',')
-          .map((tag) => tag.trim())
-          .filter(Boolean),
+        tags: gameEditForm.tags.filter(Boolean),
         media: {
           cover: gameEditForm.coverImage.trim() || buildPlaceholderCover(gameEditForm.title.trim() || selectedGame.title),
-          gallery: gameEditForm.galleryImages
-            .split(',')
-            .map((image) => image.trim())
-            .filter(Boolean),
+          gallery: gameEditForm.galleryImages.filter((img) => img.trim()),
         },
       });
 
       setGames((current) => current.map((game) => (game._id === updatedGame._id ? updatedGame : game)));
       setSelectedGameId(updatedGame._id);
-      setGameMessage('Game updated successfully.');
+      setGameMessage('Your changes were saved successfully!');
+      setTagInput('');
+      setGalleryInput('');
+      setActiveView('sell');
     } catch (error) {
       setGameMessage(error instanceof Error ? error.message : 'Could not update the game.');
     }
@@ -465,6 +724,52 @@ function App() {
       setGameMessage('Game removed from listing.');
     } catch (error) {
       setGameMessage(error instanceof Error ? error.message : 'Could not delete the game.');
+    }
+  };
+
+  const handleUpdateProfile = async () => {
+    setProfileMessage(null);
+
+    if (!session.user?.id) {
+      setProfileMessage('User not found.');
+      return;
+    }
+
+    try {
+      const updated = await authApi.updateProfile(session.user.id, {
+        username: editProfileForm.name,
+        bio: editProfileForm.bio,
+      });
+      dispatch(login(mapUser(updated)));
+      setIsEditingProfile(false);
+      setProfileMessage('✓ Profile updated successfully.');
+      setTimeout(() => setProfileMessage(null), 3000);
+    } catch (error) {
+      setProfileMessage(error instanceof Error ? error.message : 'Could not update profile.');
+    }
+  };
+
+  const handleChangePassword = async () => {
+    setProfileMessage(null);
+
+    if (!passwordForm.currentPassword || !passwordForm.newPassword) {
+      setProfileMessage('Please fill in all password fields.');
+      return;
+    }
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setProfileMessage('New passwords do not match.');
+      return;
+    }
+
+    try {
+      await authApi.changePassword(passwordForm.currentPassword, passwordForm.newPassword);
+      setIsChangingPassword(false);
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setProfileMessage('✓ Password changed successfully.');
+      setTimeout(() => setProfileMessage(null), 3000);
+    } catch (error) {
+      setProfileMessage(error instanceof Error ? error.message : 'Could not change password.');
     }
   };
 
@@ -496,8 +801,8 @@ function App() {
       dispatch(login(mapUser(nextUser)));
       setGames(nextGames);
       setCartIds([]);
-      setActiveView('games');
-      setCheckoutMessage('Payment complete. Wallet updated and seller credited.');
+      setActiveView('library');
+      setCheckoutMessage('🎉 Payment complete! Your games are now in your library.');
     } catch (error) {
       setCheckoutMessage(error instanceof Error ? error.message : 'Payment failed.');
     }
@@ -578,30 +883,35 @@ function App() {
               <button type="button" className={authMode === 'signup' ? 'pill active' : 'pill'} onClick={() => setAuthMode('signup')}>
                 Register
               </button>
+              <button type="button" className={authMode === 'admin-login' ? 'pill active' : 'pill'} onClick={() => setAuthMode('admin-login')}>
+                Admin
+              </button>
             </div>
 
             <form className="auth-form" onSubmit={handleAuthSubmit}>
-              {authMode === 'signup' && (
+              {(authMode === 'signup' || authMode === 'admin-login') && (
                 <label>
                   <span>Username</span>
                   <input
                     type="text"
-                    placeholder="Your display name"
+                    placeholder={authMode === 'admin-login' ? 'Admin username' : 'Your display name'}
                     value={authForm.name}
                     onChange={(event) => setAuthForm({ ...authForm, name: event.target.value })}
                   />
                 </label>
               )}
 
-              <label>
-                <span>Email</span>
-                <input
-                  type="email"
-                  placeholder="you@example.com"
-                  value={authForm.email}
-                  onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })}
-                />
-              </label>
+              {authMode !== 'admin-login' && (
+                <label>
+                  <span>Email</span>
+                  <input
+                    type="email"
+                    placeholder="you@example.com"
+                    value={authForm.email}
+                    onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })}
+                  />
+                </label>
+              )}
 
               <label>
                 <span>Password</span>
@@ -717,7 +1027,16 @@ function App() {
                 }}
               >
                 <span>{item}</span>
-                <small>{item === 'games' ? 'Browse and buy' : item === 'cart' ? 'Checkout wallet cart' : item === 'sell' ? 'Create listings' : 'Account settings'}</small>
+                <small>
+                  {item === 'home' ? 'Main dashboard' : 
+                   item === 'games' ? 'Browse and buy' : 
+                   item === 'sell' ? 'Create listings' : 
+                   item === 'admin' ? 'Platform logs' : 
+                   item === 'profile' ? 'Account settings' : 
+                   item === 'sales' ? 'Revenue stats' : 
+                   item === 'library' ? 'Your collection' : 
+                   'View details'}
+                </small>
               </button>
             ))}
           </nav>
@@ -727,8 +1046,14 @@ function App() {
               <Sparkles size={16} />
               <span>Account status</span>
             </div>
-            <strong>{role === 'buyer' ? 'Buyer access' : 'Seller access'}</strong>
-            <p>{role === 'buyer' ? 'You can browse games and pay from your wallet.' : 'You can create and manage listings.'}</p>
+            <strong>{role === 'admin' ? 'Admin access' : role === 'seller' ? 'Seller access' : 'Buyer access'}</strong>
+            <p>
+              {role === 'admin' 
+                ? 'You have full platform oversight.' 
+                : role === 'seller' 
+                  ? 'You can create and manage listings.' 
+                  : 'You can browse games and buy.'}
+            </p>
           </div>
         </aside>
 
@@ -736,11 +1061,22 @@ function App() {
           {activeView === 'home' && (
             <section className="hero panel">
               <div className="hero-copy">
-                <span className="eyebrow">Dashboard</span>
+                <span className="eyebrow">{role === 'admin' ? 'Administrative Dashboard' : 'Dashboard'}</span>
                 <h1>Welcome back, {sellerName}</h1>
-                <p>{role === 'buyer' ? 'Use your wallet to buy games from the storefront.' : 'Create listings and watch your wallet grow from sales.'}</p>
+                <p>
+                  {role === 'admin' 
+                    ? 'Oversee platform performance and manage user wallets.' 
+                    : role === 'buyer' 
+                      ? 'Use your wallet to buy games from the storefront.' 
+                      : 'Create listings and watch your wallet grow from sales.'}
+                </p>
                 <div className="hero-actions">
-                  {role === 'buyer' ? (
+                  {role === 'admin' ? (
+                    <button type="button" className="cta primary" onClick={() => setActiveView('admin')}>
+                      <ShieldCheck size={16} />
+                      Manage Transactions
+                    </button>
+                  ) : role === 'buyer' ? (
                     <button type="button" className="cta primary" onClick={() => setActiveView('games')}>
                       <ShoppingCart size={16} />
                       Browse games
@@ -757,14 +1093,22 @@ function App() {
               <div className="panel-inner auth-summary">
                 <div>
                   <span className="eyebrow">Session</span>
-                  <strong>{role}</strong>
+                  <strong>{role.charAt(0).toUpperCase() + role.slice(1)}</strong>
                   <p>{session.user?.email}</p>
                 </div>
-                <div>
-                  <span className="eyebrow">Wallet</span>
-                  <strong>${walletBalance.toFixed(2)}</strong>
-                  <p>{role === 'buyer' ? 'Use this balance for checkout.' : 'This is your seller balance.'}</p>
-                </div>
+                {role === 'admin' ? (
+                  <div>
+                    <span className="eyebrow">Platform Net</span>
+                    <strong>${adminTransactions.reduce((sum, t) => sum + (t.platformCut || 0), 0).toFixed(2)}</strong>
+                    <p>Total platform revenue (20% share)</p>
+                  </div>
+                ) : (
+                  <div>
+                    <span className="eyebrow">Wallet</span>
+                    <strong>${walletBalance.toFixed(2)}</strong>
+                    <p>{role === 'buyer' ? 'Use this balance for checkout.' : 'This is your seller balance.'}</p>
+                  </div>
+                )}
               </div>
             </section>
           )}
@@ -819,12 +1163,30 @@ function App() {
             <section className="detail-layout">
               <article className="panel game-detail-hero">
                 <div className="game-detail-media">
-                  <img src={selectedGame.media?.cover?.trim() ? selectedGame.media.cover : buildPlaceholderCover(selectedGame.title)} alt={selectedGame.title} />
+                  <button type="button" className="icon-button overlay-back" onClick={goBackFromDetail}>
+                    <ArrowLeft size={14} />
+                    Back
+                  </button>
+                  <img src={selectedGameGallery[selectedImageIndex]} alt={selectedGame.title} />
                 </div>
 
                 <div className="game-detail-copy">
-                  <span className="eyebrow">Game page</span>
                   <h2>{selectedGame.title}</h2>
+                  <div className="game-header-meta">
+                    <span className="studio">{selectedGame.studio}</span>
+                    <span className="rating"><Star size={16} /> {selectedGame.rating.toFixed(1)}</span>
+                    <div className="price-display">
+                      {getDiscountPercent(selectedGame) > 0 ? (
+                        <>
+                          <span className="original-price">${selectedGame.price.toFixed(2)}</span>
+                          <strong className="discounted-price">${getDiscountedPrice(selectedGame).toFixed(2)}</strong>
+                          <span className="discount-badge">{getDiscountPercent(selectedGame)}% off</span>
+                        </>
+                      ) : (
+                        <strong className="full-price">${selectedGame.price.toFixed(2)}</strong>
+                      )}
+                    </div>
+                  </div>
                   <p>{selectedGame.description}</p>
 
                   <div className="tag-row">
@@ -835,45 +1197,47 @@ function App() {
                     ))}
                   </div>
 
-                  <div className="game-hero-meta">
-                    <span>{selectedGame.studio}</span>
-                    <span><Star size={14} /> {selectedGame.rating.toFixed(1)}</span>
-                    <strong>${getDiscountedPrice(selectedGame).toFixed(2)}</strong>
-                  </div>
-                  <div className="price-stack compact">
-                    <span>${selectedGame.price.toFixed(2)} · {getDiscountPercent(selectedGame)}% off</span>
-                  </div>
-
                   <div className="hero-actions">
                     {role === 'buyer' && (
                       <>
-                        <button
-                          type="button"
-                          className="cta primary"
-                          onClick={() => {
-                            if (!cartIds.includes(selectedGame._id)) {
-                              toggleCart(selectedGame._id);
-                            }
-                            setActiveView('cart');
-                          }}
-                        >
-                          <ShoppingCart size={16} />
-                          Buy with wallet
-                        </button>
+                        {purchasedGames.some((game) => game._id === selectedGame._id) ? (
+                          <div style={{ padding: '12px 16px', borderRadius: '14px', background: 'rgba(34, 199, 168, 0.12)', border: '1px solid rgba(34, 199, 168, 0.3)', textAlign: 'center' }}>
+                            <span style={{ fontSize: '0.85rem', color: 'var(--accent-strong)', fontWeight: '600' }}>✓ Already Bought</span>
+                            <p style={{ margin: '4px 0 0 0', color: 'var(--accent)', fontSize: '0.9rem' }}>Access from your library</p>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            className="cta primary"
+                            onClick={() => {
+                              if (!cartIds.includes(selectedGame._id)) {
+                                toggleCart(selectedGame._id);
+                              }
+                              setActiveView('cart');
+                            }}
+                          >
+                            <ShoppingCart size={16} />
+                            Buy with wallet
+                          </button>
+                        )}
                         <button type="button" className="cta ghost" onClick={() => setActiveView('games')}>
                           Back to browse
                         </button>
                       </>
                     )}
-                    {role === 'seller' && !selectedGame.featured && (
+                    {role === 'seller' && !isGameCurrentlyFeatured(selectedGame) && (
                       <button type="button" className="cta ghost" onClick={() => handleFeatureGame(selectedGame._id)}>
                         <Sparkles size={16} />
                         Feature for $15
                       </button>
                     )}
-                    <button type="button" className="cta ghost" onClick={goBackFromDetail}>
-                      Back
-                    </button>
+                    {role === 'seller' && isGameCurrentlyFeatured(selectedGame) && (
+                      <div style={{ padding: '12px 16px', borderRadius: '14px', background: 'rgba(109, 247, 221, 0.15)', border: '1px solid rgba(109, 247, 221, 0.3)', textAlign: 'center' }}>
+                        <span style={{ fontSize: '0.85rem', color: 'var(--accent-strong)', fontWeight: '600' }}>⭐ Featured until</span>
+                        <p style={{ margin: '4px 0 0 0', color: 'var(--accent)', fontSize: '0.9rem' }}>{getFeatureExpiryDate(selectedGame)}</p>
+                      </div>
+                    )}
+
                   </div>
                 </div>
               </article>
@@ -887,7 +1251,13 @@ function App() {
                 </div>
                 <div className="gallery-grid">
                   {selectedGameGallery.map((image, index) => (
-                    <figure key={`${selectedGame._id}-gallery-${index}`} className="gallery-card">
+                    <figure
+                      key={`${selectedGame._id}-gallery-${index}`}
+                      className={`gallery-card thumbnail ${index === selectedImageIndex ? 'active' : ''}`}
+                      onClick={() => setSelectedImageIndex(index)}
+                      role="button"
+                      tabIndex={0}
+                    >
                       <img src={image} alt={`${selectedGame.title} screenshot ${index + 1}`} />
                     </figure>
                   ))}
@@ -898,21 +1268,10 @@ function App() {
                 <div className="section-heading compact">
                   <div>
                     <span className="eyebrow">About the game</span>
-                    <h2>Seller tags and details</h2>
                   </div>
                 </div>
                 <div className="game-detail-columns">
-                  <div>
-                    <p>{selectedGame.description}</p>
-                    <p>Tags are attached by the seller and shown here and in the carousel so buyers can spot the genre and style faster.</p>
-                  </div>
-                  <div className="game-detail-aside">
-                    {(selectedGame.tags?.length ? selectedGame.tags : [selectedGame.genre]).map((tag) => (
-                      <span key={`${selectedGame._id}-${tag}-aside`} className="pill static">
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
+                  <p>{selectedGame.description}</p>
                 </div>
               </article>
 
@@ -964,7 +1323,67 @@ function App() {
                     </label>
                     <label>
                       <span>Tags</span>
-                      <input type="text" value={gameEditForm.tags} onChange={(event) => setGameEditForm({ ...gameEditForm, tags: event.target.value })} />
+                      <div className="tag-input-group">
+                        <select
+                          value=""
+                          onChange={(event) => {
+                            const tag = event.target.value.trim();
+                            if (tag && !gameEditForm.tags.includes(tag)) {
+                              setGameEditForm({ ...gameEditForm, tags: [...gameEditForm.tags, tag] });
+                            }
+                          }}
+                        >
+                          <option value="">Select a tag...</option>
+                          {availableTags
+                            .filter((tag) => !gameEditForm.tags.includes(tag))
+                            .map((tag) => (
+                              <option key={tag} value={tag}>
+                                {tag}
+                              </option>
+                            ))}
+                        </select>
+                        <button
+                          type="button"
+                          className="cta ghost"
+                          onClick={() => {
+                            const tag = tagInput.trim();
+                            if (tag && !gameEditForm.tags.includes(tag)) {
+                              setGameEditForm({ ...gameEditForm, tags: [...gameEditForm.tags, tag] });
+                              setTagInput('');
+                            }
+                          }}
+                        >
+                          Custom tag
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Or type a custom tag"
+                        value={tagInput}
+                        onChange={(event) => setTagInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            const tag = tagInput.trim();
+                            if (tag && !gameEditForm.tags.includes(tag)) {
+                              setGameEditForm({ ...gameEditForm, tags: [...gameEditForm.tags, tag] });
+                              setTagInput('');
+                            }
+                          }
+                        }}
+                        style={{ width: '100%', marginTop: '8px' }}
+                      />
+                      <div className="tag-row">
+                        {gameEditForm.tags.map((tag) => (
+                          <span
+                            key={tag}
+                            className="pill removable"
+                            onClick={() => setGameEditForm({ ...gameEditForm, tags: gameEditForm.tags.filter((t) => t !== tag) })}
+                          >
+                            {tag} ×
+                          </span>
+                        ))}
+                      </div>
                     </label>
                     <label>
                       <span>Cover image URL</span>
@@ -972,12 +1391,57 @@ function App() {
                     </label>
                     <label>
                       <span>Gallery image URLs</span>
-                      <textarea rows={3} value={gameEditForm.galleryImages} onChange={(event) => setGameEditForm({ ...gameEditForm, galleryImages: event.target.value })} />
+                      <div className="tag-input-group">
+                        <input
+                          type="text"
+                          placeholder="https://..."
+                          value={galleryInput}
+                          onChange={(event) => setGalleryInput(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              const image = galleryInput.trim();
+                              if (image && !gameEditForm.galleryImages.includes(image)) {
+                                setGameEditForm({ ...gameEditForm, galleryImages: [...gameEditForm.galleryImages, image] });
+                                setGalleryInput('');
+                              }
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="cta ghost"
+                          onClick={() => {
+                            const image = galleryInput.trim();
+                            if (image && !gameEditForm.galleryImages.includes(image)) {
+                              setGameEditForm({ ...gameEditForm, galleryImages: [...gameEditForm.galleryImages, image] });
+                              setGalleryInput('');
+                            }
+                          }}
+                        >
+                          Add image
+                        </button>
+                      </div>
+                      <div className="gallery-list">
+                        {gameEditForm.galleryImages.map((image, index) => (
+                          <div key={index} className="gallery-item">
+                            <span className="image-url">{image}</span>
+                            <button
+                              type="button"
+                              className="cta ghost small"
+                              onClick={() => setGameEditForm({ ...gameEditForm, galleryImages: gameEditForm.galleryImages.filter((_, i) => i !== index) })}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     </label>
 
                     <label className="inline-toggle">
-                      <input type="checkbox" checked={gameEditForm.featured} onChange={(event) => setGameEditForm({ ...gameEditForm, featured: event.target.checked })} />
-                      <span>Featured listing</span>
+                      <input type="checkbox" checked={gameEditForm.published} onChange={(event) => setGameEditForm({ ...gameEditForm, published: event.target.checked })} />
+                      <span className="switch" aria-hidden />
+                      <span className="toggle-label">Visible in marketplace</span>
                     </label>
 
                     <div className="hero-actions">
@@ -1002,6 +1466,16 @@ function App() {
                     <span className="eyebrow">Storefront</span>
                     <h2>Browse games</h2>
                   </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                  <select value={selectedGenre} onChange={(event) => setSelectedGenre(event.target.value)} style={{ flex: 1, minWidth: '150px' }}>
+                    {genreOptions.map((genre) => (
+                      <option key={genre} value={genre}>
+                        {genre}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 {gamesLoading && <p className="auth-message">Loading games...</p>}
@@ -1203,12 +1677,68 @@ function App() {
                   </label>
                   <label>
                     <span>Tags</span>
+                    <div className="tag-input-group">
+                      <select
+                        value=""
+                        onChange={(event) => {
+                          const tag = event.target.value.trim();
+                          if (tag && !gameForm.tags.includes(tag)) {
+                            setGameForm({ ...gameForm, tags: [...gameForm.tags, tag] });
+                          }
+                        }}
+                      >
+                        <option value="">Select a tag...</option>
+                        {availableTags
+                          .filter((tag) => !gameForm.tags.includes(tag))
+                          .map((tag) => (
+                            <option key={tag} value={tag}>
+                              {tag}
+                            </option>
+                          ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="cta ghost"
+                        onClick={() => {
+                          // Suggest: add custom tag if not in list
+                          const tag = createTagInput.trim();
+                          if (tag && !gameForm.tags.includes(tag)) {
+                            setGameForm({ ...gameForm, tags: [...gameForm.tags, tag] });
+                            setCreateTagInput('');
+                          }
+                        }}
+                      >
+                        Custom tag
+                      </button>
+                    </div>
                     <input
                       type="text"
-                      placeholder="Action, Cozy, Multiplayer"
-                      value={gameForm.tags}
-                      onChange={(event) => setGameForm({ ...gameForm, tags: event.target.value })}
+                      placeholder="Or type a custom tag"
+                      value={createTagInput}
+                      onChange={(event) => setCreateTagInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          const tag = createTagInput.trim();
+                          if (tag && !gameForm.tags.includes(tag)) {
+                            setGameForm({ ...gameForm, tags: [...gameForm.tags, tag] });
+                            setCreateTagInput('');
+                          }
+                        }
+                      }}
+                      style={{ width: '100%', marginTop: '8px' }}
                     />
+                    <div className="tag-row">
+                      {gameForm.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="pill removable"
+                          onClick={() => setGameForm({ ...gameForm, tags: gameForm.tags.filter((t) => t !== tag) })}
+                        >
+                          {tag} ×
+                        </span>
+                      ))}
+                    </div>
                   </label>
                   <label>
                     <span>Cover image URL</span>
@@ -1221,12 +1751,51 @@ function App() {
                   </label>
                   <label>
                     <span>Gallery image URLs</span>
-                    <textarea
-                      rows={3}
-                      placeholder="https://... , https://..."
-                      value={gameForm.galleryImages}
-                      onChange={(event) => setGameForm({ ...gameForm, galleryImages: event.target.value })}
-                    />
+                    <div className="tag-input-group">
+                      <input
+                        type="text"
+                        placeholder="https://..."
+                        value={createGalleryInput}
+                        onChange={(event) => setCreateGalleryInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            const image = createGalleryInput.trim();
+                            if (image && !gameForm.galleryImages.includes(image)) {
+                              setGameForm({ ...gameForm, galleryImages: [...gameForm.galleryImages, image] });
+                              setCreateGalleryInput('');
+                            }
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="cta ghost"
+                        onClick={() => {
+                          const image = createGalleryInput.trim();
+                          if (image && !gameForm.galleryImages.includes(image)) {
+                            setGameForm({ ...gameForm, galleryImages: [...gameForm.galleryImages, image] });
+                            setCreateGalleryInput('');
+                          }
+                        }}
+                      >
+                        Add image
+                      </button>
+                    </div>
+                    <div className="gallery-list">
+                      {gameForm.galleryImages.map((image, index) => (
+                        <div key={index} className="gallery-item">
+                          <span className="image-url">{image}</span>
+                          <button
+                            type="button"
+                            className="cta ghost small"
+                            onClick={() => setGameForm({ ...gameForm, galleryImages: gameForm.galleryImages.filter((_, i) => i !== index) })}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </label>
 
                   {gameMessage && <p className={gameMessage.includes('saved') ? 'auth-message success' : 'auth-message error'}>{gameMessage}</p>}
@@ -1255,12 +1824,14 @@ function App() {
                           <div className="crud-meta">
                             <span>{game.genre}</span>
                             <span>${game.price.toFixed(2)}</span>
-                            <span className={game.featured ? 'pill active static' : 'pill static'}>{game.featured ? 'Featured' : 'Standard'}</span>
+                            <span className={isGameCurrentlyFeatured(game) ? 'pill active static' : 'pill static'}>
+                              {isGameCurrentlyFeatured(game) ? `Featured (${getFeatureExpiryDate(game)})` : 'Standard'}
+                            </span>
                           </div>
                         </div>
                         <div className="crud-actions">
-                          <span className={`status ${game.featured ? 'live' : 'draft'}`}>{game.featured ? 'Live' : 'Draft'}</span>
-                          {!game.featured && (
+                          <span className={`status ${isGameCurrentlyFeatured(game) ? 'live' : 'draft'}`}>{isGameCurrentlyFeatured(game) ? 'Featured' : 'Draft'}</span>
+                          {!isGameCurrentlyFeatured(game) && (
                             <button type="button" className="cta ghost compact" onClick={(event) => {
                               event.stopPropagation();
                               handleFeatureGame(game._id);
@@ -1282,6 +1853,87 @@ function App() {
             </section>
           )}
 
+          {activeView === 'library' && role === 'buyer' && (
+            <section className="detail-layout">
+              <article className="panel">
+                <div className="section-heading">
+                  <div>
+                    <span className="eyebrow">Your Collection</span>
+                    <h2>Game Library</h2>
+                  </div>
+                </div>
+
+                {purchasedGames.length === 0 ? (
+                  <div className="empty-state">
+                    <p>You haven't purchased any games yet. Head to the storefront to find something amazing!</p>
+                  </div>
+                ) : (
+                  <div className="game-grid">
+                    {purchasedGames.map((game) => {
+                      const cover = game.media?.cover?.trim() ? game.media.cover : buildPlaceholderCover(game.title);
+                      return (
+                        <article
+                          key={game._id}
+                          className="game-card clickable"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => openGameDetail(game._id)}
+                        >
+                          <img className="game-card-image" src={cover} alt={game.title} />
+                          <h3>{game.title}</h3>
+                          <p>{game.studio}</p>
+                          <div className="tag-row compact">
+                            {(game.tags?.length ? game.tags : [game.genre]).slice(0, 2).map((tag: string) => (
+                              <span key={`${game._id}-${tag}`} className="pill static">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                          <div style={{ marginTop: '8px' }}>
+                            <strong style={{ color: 'var(--accent-strong)' }}>${getDiscountedPrice(game).toFixed(2)}</strong>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </article>
+
+              <article className="panel">
+                <div className="section-heading">
+                  <div>
+                    <span className="eyebrow">Stats</span>
+                    <h2>Achievements & Stats</h2>
+                  </div>
+                </div>
+
+                <div className="stats-panel" style={{ display: 'grid', gap: '12px', marginBottom: '20px' }}>
+                  <div style={{ padding: '16px', background: 'rgba(34, 199, 168, 0.1)', borderRadius: '12px', border: '1px solid rgba(34, 199, 168, 0.2)' }}>
+                    <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Games Owned</span>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '1.8rem', color: 'var(--accent-strong)', fontWeight: '700' }}>{purchasedGames.length}</p>
+                  </div>
+                  <div style={{ padding: '16px', background: 'rgba(255, 179, 71, 0.1)', borderRadius: '12px', border: '1px solid rgba(255, 179, 71, 0.2)' }}>
+                    <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Total Spent</span>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '1.8rem', color: 'var(--accent-alt)', fontWeight: '700' }}>${totalSpent.toFixed(2)}</p>
+                  </div>
+                </div>
+
+                <div className="achievements-grid">
+                  {achievements.map((achievement) => (
+                    <div
+                      key={achievement.id}
+                      className={`achievement-card ${achievement.unlocked ? 'unlocked' : 'locked'}`}
+                    >
+                      <div className="achievement-icon">{achievement.icon}</div>
+                      <h4>{achievement.title}</h4>
+                      <p>{achievement.description}</p>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            </section>
+          )}
+
           {activeView === 'profile' && (
             <section className="two-column">
               <article className="panel profile-card">
@@ -1299,33 +1951,472 @@ function App() {
                   <span>Wallet balance</span>
                   <strong>${walletBalance.toFixed(2)}</strong>
                 </div>
+                <div className="hero-actions" style={{ marginTop: '14px', gap: '8px' }}>
+                  <button
+                    type="button"
+                    className="cta primary small"
+                    onClick={() => {
+                      setEditProfileForm({ name: session.user?.name ?? '', bio: session.user?.bio ?? '' });
+                      setIsEditingProfile(true);
+                    }}
+                  >
+                    Edit details
+                  </button>
+                  <button
+                    type="button"
+                    className="cta ghost small"
+                    onClick={() => setIsChangingPassword(true)}
+                  >
+                    Change password
+                  </button>
+                </div>
               </article>
 
+              {profileMessage && (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <p className={`auth-message ${profileMessage.includes('✓') ? 'success' : 'error'}`}>
+                    {profileMessage}
+                  </p>
+                </div>
+              )}
+
+              {isEditingProfile && (
+                <article className="panel" style={{ gridColumn: '1 / -1' }}>
+                  <div className="section-heading compact">
+                    <div>
+                      <span className="eyebrow">Profile</span>
+                      <h2>Edit details</h2>
+                    </div>
+                  </div>
+                  <form className="listing-form" onSubmit={(e) => { e.preventDefault(); handleUpdateProfile(); }}>
+                    <label>
+                      <span>Name</span>
+                      <input
+                        type="text"
+                        value={editProfileForm.name}
+                        onChange={(e) => setEditProfileForm({ ...editProfileForm, name: e.target.value })}
+                      />
+                    </label>
+                    <label>
+                      <span>Bio</span>
+                      <textarea
+                        rows={3}
+                        value={editProfileForm.bio}
+                        onChange={(e) => setEditProfileForm({ ...editProfileForm, bio: e.target.value })}
+                      />
+                    </label>
+                    <div className="hero-actions">
+                      <button type="submit" className="cta primary">
+                        Save changes
+                      </button>
+                      <button
+                        type="button"
+                        className="cta ghost"
+                        onClick={() => setIsEditingProfile(false)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                </article>
+              )}
+
+              {isChangingPassword && (
+                <article className="panel" style={{ gridColumn: '1 / -1' }}>
+                  <div className="section-heading compact">
+                    <div>
+                      <span className="eyebrow">Security</span>
+                      <h2>Change password</h2>
+                    </div>
+                  </div>
+                  <form className="listing-form" onSubmit={(e) => { e.preventDefault(); handleChangePassword(); }}>
+                    <label>
+                      <span>Current password</span>
+                      <input
+                        type="password"
+                        value={passwordForm.currentPassword}
+                        onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+                      />
+                    </label>
+                    <label>
+                      <span>New password</span>
+                      <input
+                        type="password"
+                        value={passwordForm.newPassword}
+                        onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                      />
+                    </label>
+                    <label>
+                      <span>Confirm new password</span>
+                      <input
+                        type="password"
+                        value={passwordForm.confirmPassword}
+                        onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                      />
+                    </label>
+                    <div className="hero-actions">
+                      <button type="submit" className="cta primary">
+                        Update password
+                      </button>
+                      <button
+                        type="button"
+                        className="cta ghost"
+                        onClick={() => setIsChangingPassword(false)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                </article>
+              )}
+
+            </section>
+          )}
+
+          {activeView === 'sales' && role === 'seller' && (
+            <section className="detail-layout">
               <article className="panel">
-                <div className="section-heading compact">
+                <div className="section-heading">
                   <div>
-                    <span className="eyebrow">Role rules</span>
-                    <h2>What you can do</h2>
+                    <span className="eyebrow">Financials</span>
+                    <h2>Sales & Transaction History</h2>
                   </div>
                 </div>
-                <div className="workflow-list">
-                  <article>
-                    <strong>Buyer</strong>
-                    <p>Can browse games, add to cart, edit discount settings, and pay from wallet balance only.</p>
-                  </article>
-                  <article>
-                    <strong>Seller</strong>
-                    <p>Can create listings and receive wallet credits after sales.</p>
-                  </article>
-                  <article>
-                    <strong>Cut</strong>
-                    <p>Every purchase sends 80 percent to the seller and 20 percent to GameForge.</p>
-                  </article>
+
+                <div className="filters-row" style={{ display: 'flex', gap: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>
+                  <label style={{ flex: 1, minWidth: '200px' }}>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>Filter by Game</span>
+                    <select
+                      value={transactionFilters.gameId}
+                      onChange={(e) => setTransactionFilters({ ...transactionFilters, gameId: e.target.value })}
+                      style={{ width: '100%' }}
+                    >
+                      <option value="">All Games</option>
+                      {ownGames.map(game => (
+                        <option key={game._id} value={game._id}>{game.title}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label style={{ flex: 1, minWidth: '150px' }}>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>Start Date</span>
+                    <input
+                      type="date"
+                      value={transactionFilters.startDate}
+                      onChange={(e) => setTransactionFilters({ ...transactionFilters, startDate: e.target.value })}
+                      style={{ width: '100%' }}
+                    />
+                  </label>
+                  <label style={{ flex: 1, minWidth: '150px' }}>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>End Date</span>
+                    <input
+                      type="date"
+                      value={transactionFilters.endDate}
+                      onChange={(e) => setTransactionFilters({ ...transactionFilters, endDate: e.target.value })}
+                      style={{ width: '100%' }}
+                    />
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                    <button
+                      type="button"
+                      className="cta ghost"
+                      onClick={() => setTransactionFilters({ startDate: '', endDate: '', gameId: '' })}
+                      style={{ height: '42px' }}
+                    >
+                      Clear Filters
+                    </button>
+                  </div>
                 </div>
-                <div className="empty-state compact">
-                  <p>{role === 'buyer' ? 'Buyers can edit account details only. Discounts are controlled by sellers on their game listings.' : 'Open one of your games to edit its details, discount, or remove it from the listing.'}</p>
-                </div>
+
+                {transactionsLoading ? (
+                  <p className="auth-message">Loading transactions...</p>
+                ) : transactions.length === 0 ? (
+                  <div className="empty-state">
+                    <p>No transactions found for the selected criteria.</p>
+                  </div>
+                ) : (
+                  <div className="table-responsive" style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: 'var(--muted)' }}>
+                          <th style={{ padding: '12px 8px' }}>Date</th>
+                          <th style={{ padding: '12px 8px' }}>Type</th>
+                          <th style={{ padding: '12px 8px' }}>Game</th>
+                          <th style={{ padding: '12px 8px' }}>User</th>
+                          <th style={{ padding: '12px 8px', textAlign: 'right' }}>Total Price</th>
+                          <th style={{ padding: '12px 8px', textAlign: 'right' }}>Platform Cut</th>
+                          <th style={{ padding: '12px 8px', textAlign: 'right' }}>Net Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {transactions.map(tx => (
+                          <tr key={tx._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                            <td style={{ padding: '12px 8px', whiteSpace: 'nowrap' }}>
+                              {new Date(tx.createdAt).toLocaleDateString()}
+                            </td>
+                            <td style={{ padding: '12px 8px' }}>
+                              <span className={`pill static ${tx.type === 'sale' ? 'active' : ''}`} style={{ fontSize: '0.75rem' }}>
+                                {tx.type === 'sale' ? 'Sale' : 'Feature Fee'}
+                              </span>
+                            </td>
+                            <td style={{ padding: '12px 8px' }}>{tx.gameId?.title || 'Unknown'}</td>
+                            <td style={{ padding: '12px 8px', color: 'var(--muted)' }}>
+                              {tx.type === 'sale' ? (tx.buyerId?.username || 'Deleted User') : 'N/A'}
+                            </td>
+                            <td style={{ padding: '12px 8px', textAlign: 'right' }}>
+                              ${tx.totalPrice?.toFixed(2)}
+                            </td>
+                            <td style={{ padding: '12px 8px', textAlign: 'right', color: 'var(--danger)' }}>
+                              {tx.platformCut > 0 ? `-$${tx.platformCut.toFixed(2)}` : '-'}
+                            </td>
+                            <td style={{ padding: '12px 8px', textAlign: 'right', fontWeight: 'bold', color: tx.amount > 0 ? 'var(--accent-alt)' : 'var(--danger)' }}>
+                              {tx.amount > 0 ? '+' : ''}${tx.amount.toFixed(2)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </article>
+
+              <aside className="panel info-rail">
+                <div className="section-heading compact">
+                  <div>
+                    <span className="eyebrow">Summary</span>
+                    <h2>Transaction Stats</h2>
+                  </div>
+                </div>
+
+                <div className="stats-panel" style={{ display: 'grid', gap: '12px' }}>
+                  <div style={{ padding: '16px', background: 'rgba(34, 199, 168, 0.1)', borderRadius: '12px', border: '1px solid rgba(34, 199, 168, 0.2)' }}>
+                    <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Total Sales Revenue (Net)</span>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '1.8rem', color: 'var(--accent-strong)', fontWeight: '700' }}>
+                      ${transactions.filter(t => t.type === 'sale').reduce((sum, t) => sum + t.amount, 0).toFixed(2)}
+                    </p>
+                  </div>
+                  <div style={{ padding: '16px', background: 'rgba(255, 60, 60, 0.1)', borderRadius: '12px', border: '1px solid rgba(255, 60, 60, 0.2)' }}>
+                    <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Total Feature Fees</span>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '1.8rem', color: 'var(--danger)', fontWeight: '700' }}>
+                      ${Math.abs(transactions.filter(t => t.type === 'feature_fee').reduce((sum, t) => sum + t.amount, 0)).toFixed(2)}
+                    </p>
+                  </div>
+                  <div style={{ padding: '16px', background: 'rgba(255, 179, 71, 0.1)', borderRadius: '12px', border: '1px solid rgba(255, 179, 71, 0.2)' }}>
+                    <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Total Platform Fees</span>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '1.8rem', color: 'var(--accent-alt)', fontWeight: '700' }}>
+                      ${transactions.reduce((sum, t) => sum + (t.platformCut || 0), 0).toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+              </aside>
+            </section>
+          )}
+          {activeView === 'admin' && role === 'admin' && (
+            <section className="panel" style={{ display: 'grid', gap: '24px' }}>
+              {/* Header */}
+              <div className="section-heading">
+                <div>
+                  <span className="eyebrow">GameForge Admin</span>
+                  <h2>Platform Transaction History</h2>
+                </div>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  <span style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>{adminTransactions.length} transactions found</span>
+                  <button type="button" className="cta ghost small" onClick={() => setAdminTransactionFilters({ startDate: '', endDate: '', gameName: '', category: '', userId: '' })}>
+                    Reset Filters
+                  </button>
+                </div>
+              </div>
+
+              {/* Filters */}
+              <div className="filters-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', padding: '20px', background: 'rgba(255,255,255,0.03)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <label>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '6px', display: 'block' }}>Search by Game</span>
+                  <input
+                    type="text"
+                    placeholder="Game title..."
+                    value={adminTransactionFilters.gameName}
+                    onChange={(e) => setAdminTransactionFilters({ ...adminTransactionFilters, gameName: e.target.value })}
+                  />
+                </label>
+                <label>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '6px', display: 'block' }}>Category</span>
+                  <select
+                    value={adminTransactionFilters.category}
+                    onChange={(e) => setAdminTransactionFilters({ ...adminTransactionFilters, category: e.target.value })}
+                  >
+                    <option value="">All Categories</option>
+                    {genreOptions.map(g => <option key={g} value={g}>{g}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '6px', display: 'block' }}>User ID</span>
+                  <input
+                    type="text"
+                    placeholder="User MongoDB ID..."
+                    value={adminTransactionFilters.userId}
+                    onChange={(e) => setAdminTransactionFilters({ ...adminTransactionFilters, userId: e.target.value })}
+                  />
+                </label>
+                <label>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '6px', display: 'block' }}>Start Date</span>
+                  <input
+                    type="date"
+                    value={adminTransactionFilters.startDate}
+                    onChange={(e) => setAdminTransactionFilters({ ...adminTransactionFilters, startDate: e.target.value })}
+                  />
+                </label>
+                <label>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '6px', display: 'block' }}>End Date</span>
+                  <input
+                    type="date"
+                    value={adminTransactionFilters.endDate}
+                    onChange={(e) => setAdminTransactionFilters({ ...adminTransactionFilters, endDate: e.target.value })}
+                  />
+                </label>
+              </div>
+
+              {/* Transactions Table */}
+              <div className="panel-inner" style={{ padding: 0 }}>
+                {adminTransactionsLoading ? (
+                  <div style={{ padding: '40px', textAlign: 'center' }}>
+                    <p className="auth-message">Syncing platform logs...</p>
+                  </div>
+                ) : adminTransactions.length === 0 ? (
+                  <div className="empty-state">
+                    <p>No platform transactions found for these filters.</p>
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                      <thead>
+                        <tr style={{ textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)', color: 'var(--muted)' }}>
+                          <th style={{ padding: '16px' }}>Timestamp</th>
+                          <th style={{ padding: '16px' }}>Type</th>
+                          <th style={{ padding: '16px' }}>Game / Details</th>
+                          <th style={{ padding: '16px' }}>Buyer</th>
+                          <th style={{ padding: '16px' }}>Seller</th>
+                          <th style={{ padding: '16px', textAlign: 'right' }}>Total</th>
+                          <th style={{ padding: '16px', textAlign: 'right' }}>Net To User</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {adminTransactions.map((tx) => (
+                          <tr key={tx._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', transition: 'background 0.2s' }}>
+                            <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
+                              {new Date(tx.createdAt).toLocaleString()}
+                            </td>
+                            <td style={{ padding: '14px 16px' }}>
+                              <span className={`pill static ${tx.type === 'sale' ? 'active' : ''}`} style={{ fontSize: '0.75rem' }}>
+                                {tx.type.toUpperCase()}
+                              </span>
+                            </td>
+                            <td style={{ padding: '14px 16px' }}>
+                              <div>
+                                <strong style={{ display: 'block' }}>{tx.gameId?.title || 'N/A'}</strong>
+                                <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{tx.gameId?.genre || 'N/A'}</span>
+                              </div>
+                            </td>
+                            <td style={{ padding: '14px 16px' }}>
+                              {tx.buyerId ? (
+                                <div>
+                                  <span style={{ display: 'block' }}>{tx.buyerId.username}</span>
+                                  <code style={{ fontSize: '0.65rem', color: 'var(--muted)' }}>{tx.buyerId._id}</code>
+                                </div>
+                              ) : <span style={{ color: 'var(--muted)' }}>N/A</span>}
+                            </td>
+                            <td style={{ padding: '14px 16px' }}>
+                              {tx.sellerId ? (
+                                <div>
+                                  <span style={{ display: 'block' }}>{tx.sellerId.username}</span>
+                                  <code style={{ fontSize: '0.65rem', color: 'var(--muted)' }}>{tx.sellerId._id}</code>
+                                </div>
+                              ) : <span style={{ color: 'var(--muted)' }}>N/A</span>}
+                            </td>
+                            <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                              <strong>${tx.totalPrice?.toFixed(2) || '0.00'}</strong>
+                            </td>
+                            <td style={{ padding: '14px 16px', textAlign: 'right', color: (tx.amount ?? 0) > 0 ? 'var(--accent-alt)' : 'var(--danger)', fontWeight: '600' }}>
+                              {(tx.amount ?? 0) > 0 ? '+' : ''}${(tx.amount ?? 0).toFixed(2)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Wallet Top-up Tools */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '24px' }}>
+                <article className="panel" style={{ margin: 0, padding: '24px' }}>
+                  <div className="section-heading compact">
+                    <div>
+                      <span className="eyebrow">Finance</span>
+                      <h2>Wallet Top-up Control</h2>
+                    </div>
+                  </div>
+                  <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginBottom: '20px' }}>Inject balance into any buyer or seller wallet directly. This bypasses Stripe and updates the MongoDB balance immediately.</p>
+                  
+                  <form onSubmit={handleTopUp} style={{ display: 'grid', gap: '16px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                      <label>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '6px', display: 'block' }}>Target User</span>
+                        <select 
+                          value={topUpUserId} 
+                          onChange={(e) => setTopUpUserId(e.target.value)}
+                          disabled={allUsersLoading}
+                        >
+                          <option value="">Select a user...</option>
+                          {allUsers.map((u) => (
+                            <option key={u._id} value={u._id}>{u.username} ({u.role}) - ${(u.walletBalance ?? 0).toFixed(2)}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '6px', display: 'block' }}>Amount ($)</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          placeholder="0.00"
+                          value={topUpAmount}
+                          onChange={(e) => setTopUpAmount(e.target.value)}
+                        />
+                      </label>
+                    </div>
+                    {topUpMessage && (
+                      <p className={`auth-message ${topUpMessage.includes('Success') ? 'success' : 'error'}`} style={{ margin: 0 }}>
+                        {topUpMessage}
+                      </p>
+                    )}
+                    <button type="submit" className="cta primary block" disabled={!topUpUserId || !topUpAmount}>
+                      <DollarSign size={16} />
+                      Confirm Wallet Injection
+                    </button>
+                  </form>
+                </article>
+
+                <article className="panel" style={{ margin: 0, padding: '24px' }}>
+                  <div className="section-heading compact">
+                    <div>
+                      <span className="eyebrow">Insights</span>
+                      <h2>Revenue Share</h2>
+                    </div>
+                  </div>
+                  <div className="stats-panel" style={{ display: 'grid', gap: '12px' }}>
+                    <div style={{ padding: '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px' }}>
+                      <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Platform Net (20%)</span>
+                      <p style={{ margin: '4px 0 0 0', fontSize: '1.5rem', fontWeight: '700' }}>
+                        ${adminTransactions.reduce((sum, t) => sum + (t.platformCut || 0), 0).toFixed(2)}
+                      </p>
+                    </div>
+                    <div style={{ padding: '16px', background: 'rgba(34, 199, 168, 0.1)', borderRadius: '12px' }}>
+                      <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Seller Payouts (80%)</span>
+                      <p style={{ margin: '4px 0 0 0', fontSize: '1.5rem', color: 'var(--accent-strong)', fontWeight: '700' }}>
+                        ${adminTransactions.filter(t => t.type === 'sale').reduce((sum, t) => sum + (t.amount || 0), 0).toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
+                </article>
+              </div>
             </section>
           )}
         </main>

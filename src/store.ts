@@ -1,6 +1,6 @@
 import { configureStore, createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
-export type UserRole = 'buyer' | 'seller';
+export type UserRole = 'buyer' | 'seller' | 'admin';
 
 export interface UserProfile {
   id: string;
@@ -12,6 +12,8 @@ export interface UserProfile {
   bio: string;
   avatar: string;
   genres: string[];
+  purchases?: any[];
+  listings?: any[];
 }
 
 export interface DraftGame {

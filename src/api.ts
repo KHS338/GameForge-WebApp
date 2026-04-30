@@ -64,6 +64,8 @@ export interface ApiGame {
   description: string;
   price: number;
   featured: boolean;
+  featureExpiresAt?: string | null;
+  published: boolean;
   discountPercent: number;
   rating: number;
   sellerId: { _id: string; username: string } | string;
@@ -76,6 +78,19 @@ export interface ApiGame {
   createdAt: string;
   updatedAt: string;
   tags: string[];
+}
+
+export interface ApiTransaction {
+  _id: string;
+  sellerId: string;
+  type: 'sale' | 'feature_fee';
+  gameId: { _id: string; title: string };
+  buyerId?: { _id: string; username: string; email: string };
+  amount: number;
+  platformCut: number;
+  totalPrice: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // Games API
@@ -182,6 +197,13 @@ export const gamesApi = {
     if (!response.ok) throw new Error('Failed to delete game');
     return response.json();
   },
+
+  async getTags() {
+    const response = await fetch(`${API_BASE_URL}/games/tags/all`);
+    if (!response.ok) throw new Error('Failed to fetch tags');
+    const data = await response.json() as { tags: string[] };
+    return data.tags;
+  },
 };
 
 // Auth API
@@ -222,6 +244,21 @@ export const authApi = {
     return response.json() as Promise<ApiUser>;
   },
 
+  async adminLogin(username: string, password: string): Promise<{ message: string; token: string; user: ApiUser }> {
+    const response = await fetch(`${API_BASE_URL}/auth/admin-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      throw new Error(data?.message || 'Admin login failed');
+    }
+    const data = await response.json();
+    setToken(data.token);
+    return data;
+  },
+
   async getProfile(id: string) {
     const response = await fetch(`${API_BASE_URL}/auth/${id}`);
     if (!response.ok) throw new Error('Failed to fetch profile');
@@ -242,7 +279,92 @@ export const authApi = {
     return response.json() as Promise<ApiUser>;
   },
 
+  async changePassword(currentPassword: string, newPassword: string) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/auth/change-password`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.message || 'Failed to change password');
+    }
+    return response.json();
+  },
+
   logout() {
     clearToken();
+  },
+};
+
+// Transactions API
+export const transactionsApi = {
+  async getSellerTransactions(params?: { startDate?: string; endDate?: string; gameId?: string }) {
+    const query = new URLSearchParams();
+    if (params?.startDate) query.set('startDate', params.startDate);
+    if (params?.endDate) query.set('endDate', params.endDate);
+    if (params?.gameId) query.set('gameId', params.gameId);
+
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/transactions/seller${query.toString() ? '?' + query.toString() : ''}`, {
+      headers,
+    });
+    
+    if (!response.ok) throw new Error('Failed to fetch transactions');
+    return response.json() as Promise<ApiTransaction[]>;
+  },
+};
+
+// Admin API
+export const adminApi = {
+  async getAllTransactions(params?: { startDate?: string; endDate?: string; gameName?: string; category?: string; userId?: string }) {
+    const query = new URLSearchParams();
+    if (params?.startDate) query.set('startDate', params.startDate);
+    if (params?.endDate) query.set('endDate', params.endDate);
+    if (params?.gameName) query.set('gameName', params.gameName);
+    if (params?.category) query.set('category', params.category);
+    if (params?.userId) query.set('userId', params.userId);
+
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/admin/transactions${query.toString() ? '?' + query.toString() : ''}`, {
+      headers,
+    });
+    if (!response.ok) throw new Error('Failed to fetch all transactions');
+    return response.json() as Promise<ApiTransaction[]>;
+  },
+
+  async getAllUsers() {
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/admin/users`, { headers });
+    if (!response.ok) throw new Error('Failed to fetch users');
+    return response.json() as Promise<ApiUser[]>;
+  },
+
+  async adminLogin(username: string, password: string): Promise<{ message: string; token: string; user: ApiUser }> {
+    const response = await fetch(`${API_BASE_URL}/auth/admin-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      throw new Error(data?.message || 'Admin login failed');
+    }
+    const data = await response.json();
+    setToken(data.token);
+    return data;
   },
 };

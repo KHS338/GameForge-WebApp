@@ -95,6 +95,51 @@ router.post('/login', async (req, res) => {
   }
 });
 
+// Admin login
+router.post('/admin-login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    console.log(`🔐 Admin login attempt - username: ${username}`);
+
+    if (!username || !password) {
+      return res.status(400).json({ message: 'Missing username or password' });
+    }
+
+    const user = await User.findOne({ username });
+
+    if (!user) {
+      console.log(`✗ Admin login failed - user not found: ${username}`);
+      return res.status(401).json({ message: 'Invalid username or password' });
+    }
+
+    if (user.role !== 'admin') {
+      console.log(`✗ Admin login failed - not an admin: ${username}`);
+      return res.status(403).json({ message: 'Forbidden: You are not an admin' });
+    }
+
+    const isPasswordValid = await (user as any).comparePassword(password);
+
+    if (!isPasswordValid) {
+      console.log(`✗ Admin login failed - invalid password: ${username}`);
+      return res.status(401).json({ message: 'Invalid username or password' });
+    }
+
+    console.log(`✓ Admin login successful: ${username}`);
+    const token = generateToken(user._id as unknown as string, user.email, user.role);
+    const userResponse = user.toObject();
+    delete (userResponse as any).password;
+
+    res.json({
+      message: 'Admin login successful',
+      token,
+      user: userResponse,
+    });
+  } catch (error) {
+    console.error('✗ Error in admin login:', error);
+    res.status(500).json({ message: 'Error logging in', error });
+  }
+});
+
 // Get current user (requires token)
 router.get('/me', verifyToken, async (req: AuthRequest, res) => {
   try {
@@ -102,7 +147,7 @@ router.get('/me', verifyToken, async (req: AuthRequest, res) => {
       return res.status(401).json({ message: 'Not authenticated' });
     }
 
-    const user = await User.findById(req.user.id).select('-password');
+    const user = await User.findById(req.user.id).select('-password').populate('purchases').populate('listings');
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -160,6 +205,42 @@ router.patch('/:id', verifyToken, async (req: AuthRequest, res) => {
     res.json(user);
   } catch (error) {
     res.status(500).json({ message: 'Error updating user', error });
+  }
+});
+
+// Change password
+router.post('/change-password', verifyToken, async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: 'Not authenticated' });
+    }
+
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: 'Missing current or new password' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const isPasswordValid = await (user as any).comparePassword(currentPassword);
+    if (!isPasswordValid) {
+      return res.status(401).json({ message: 'Current password is incorrect' });
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    res.json({ message: 'Password changed successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error changing password', error });
   }
 });
 
