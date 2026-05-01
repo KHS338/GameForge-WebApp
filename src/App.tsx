@@ -18,10 +18,10 @@ import {
 import { authApi, clearToken, gamesApi, transactionsApi, adminApi, getToken, type ApiGame, type ApiUser, type CreateGamePayload, type ApiTransaction } from './api';
 import { genreOptions } from './data';
 import { login, logout, type RootState, type UserProfile } from './store';
-import { ForumPanel } from './components/ForumPanel';
+import { ForumPage } from './components/ForumPage';
 
 type AuthMode = 'login' | 'signup' | 'admin-login';
-type ViewKey = 'home' | 'games' | 'sell' | 'profile' | 'cart' | 'payment' | 'detail' | 'library' | 'sales' | 'admin';
+type ViewKey = 'home' | 'games' | 'sell' | 'profile' | 'cart' | 'payment' | 'detail' | 'library' | 'sales' | 'admin' | 'forums';
 
 type Role = 'buyer' | 'seller' | 'admin';
 
@@ -46,9 +46,9 @@ const emptyGameForm = {
 
 const discountOptions = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 
-const buyerViews: ViewKey[] = ['home', 'games', 'library', 'cart', 'profile'];
-const sellerViews: ViewKey[] = ['home', 'sell', 'sales', 'profile'];
-const adminViews: ViewKey[] = ['home', 'admin', 'profile'];
+const buyerViews: ViewKey[] = ['home', 'games', 'forums', 'library', 'cart', 'profile'];
+const sellerViews: ViewKey[] = ['home', 'sell', 'forums', 'sales', 'profile'];
+const adminViews: ViewKey[] = ['home', 'forums', 'admin', 'profile'];
 
 function initials(value: string) {
   const parts = value.trim().split(/\s+/).filter(Boolean);
@@ -148,6 +148,7 @@ function App() {
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [gameForm, setGameForm] = useState(emptyGameForm);
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
+  const [forumGameId, setForumGameId] = useState<string | null>(null);
   const [gameEditForm, setGameEditForm] = useState({
     title: '',
     genre: 'Action',
@@ -495,7 +496,7 @@ function App() {
   }, [games, selectedGameId]);
 
   useEffect(() => {
-    if (activeView === 'detail' && !selectedGame && games.length > 0) {
+    if ((activeView === 'detail' || activeView === 'forums') && !selectedGame && games.length > 0) {
       setSelectedGameId(games[0]._id);
     }
   }, [activeView, games, selectedGame]);
@@ -579,6 +580,16 @@ function App() {
   const openGameDetail = (gameId: string) => {
     setSelectedGameId(gameId);
     setActiveView('detail');
+  };
+
+  const openGameForums = (gameId?: string) => {
+    setForumGameId(gameId ?? null);
+    setActiveView('forums');
+  };
+
+  const openForumsHub = () => {
+    setForumGameId(null);
+    setActiveView('forums');
   };
 
   const goBackFromDetail = () => {
@@ -1024,7 +1035,11 @@ function App() {
                 type="button"
                 className={activeView === item ? 'nav-item active' : 'nav-item'}
                 onClick={() => {
-                  setActiveView(item);
+                  if (item === 'forums') {
+                    openForumsHub();
+                  } else {
+                    setActiveView(item);
+                  }
                   setMobileMenuOpen(false);
                 }}
               >
@@ -1032,6 +1047,7 @@ function App() {
                 <small>
                   {item === 'home' ? 'Main dashboard' : 
                    item === 'games' ? 'Browse and buy' : 
+                   item === 'forums' ? 'Game discussions' : 
                    item === 'sell' ? 'Create listings' : 
                    item === 'admin' ? 'Platform logs' : 
                    item === 'profile' ? 'Account settings' : 
@@ -1240,6 +1256,10 @@ function App() {
                       </div>
                     )}
 
+                    <button type="button" className="cta ghost" onClick={() => openGameForums(selectedGame._id)}>
+                      Game forums
+                    </button>
+
                   </div>
                 </div>
               </article>
@@ -1276,8 +1296,6 @@ function App() {
                   <p>{selectedGame.description}</p>
                 </div>
               </article>
-
-              <ForumPanel gameId={selectedGame._id} />
 
               {role === 'seller' && ownGames.some((game) => game._id === selectedGame._id) && (
                 <article className="panel game-edit-panel">
@@ -1459,6 +1477,15 @@ function App() {
                   </form>
                 </article>
               )}
+            </section>
+          )}
+
+          {activeView === 'forums' && (
+            <section className="forum-page-layout">
+              <ForumPage
+                games={games.map((game) => ({ _id: game._id, title: game.title }))}
+                initialGameId={forumGameId}
+              />
             </section>
           )}
 

@@ -85,24 +85,27 @@ function applyVoteToDoc(doc: { upvoters: mongoose.Types.ObjectId[]; downvoters: 
   doc.downvotes = nextDownvoters.length;
 }
 
-router.get('/games/:gameId/topics', attachOptionalUser, async (req: AuthRequest, res) => {
+async function fetchForumTopics(req: AuthRequest, res: express.Response, gameId?: string) {
   try {
-    const { gameId } = req.params;
-    if (!isValidObjectId(gameId)) {
-      return res.status(400).json({ message: 'Invalid game id' });
-    }
-
-    const gameExists = await Game.exists({ _id: gameId });
-    if (!gameExists) {
-      return res.status(404).json({ message: 'Game not found' });
-    }
-
     const sort = typeof req.query.sort === 'string' ? req.query.sort : 'activity';
     const page = Math.max(Number(req.query.page) || 1, 1);
     const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 50);
     const queryText = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const requestedGameId = typeof req.query.gameId === 'string' ? req.query.gameId.trim() : '';
 
-    const filter: Record<string, unknown> = { gameId: new mongoose.Types.ObjectId(gameId) };
+    const nextGameId = gameId || requestedGameId || '';
+    if (nextGameId && !isValidObjectId(nextGameId)) {
+      return res.status(400).json({ message: 'Invalid game id' });
+    }
+
+    if (nextGameId) {
+      const gameExists = await Game.exists({ _id: nextGameId });
+      if (!gameExists) {
+        return res.status(404).json({ message: 'Game not found' });
+      }
+    }
+
+    const filter: Record<string, unknown> = nextGameId ? { gameId: new mongoose.Types.ObjectId(nextGameId) } : {};
     if (queryText) {
       filter.$or = [
         { title: { $regex: queryText, $options: 'i' } },
@@ -142,6 +145,18 @@ router.get('/games/:gameId/topics', attachOptionalUser, async (req: AuthRequest,
   } catch (error) {
     res.status(500).json({ message: 'Error fetching forum topics', error });
   }
+}
+
+router.get('/', attachOptionalUser, async (req: AuthRequest, res) => {
+  await fetchForumTopics(req, res);
+});
+
+router.get('/:gameId', attachOptionalUser, async (req: AuthRequest, res) => {
+  await fetchForumTopics(req, res, req.params.gameId);
+});
+
+router.get('/games/:gameId/topics', attachOptionalUser, async (req: AuthRequest, res) => {
+  await fetchForumTopics(req, res, req.params.gameId);
 });
 
 router.post('/games/:gameId/topics', verifyToken, async (req: AuthRequest, res) => {

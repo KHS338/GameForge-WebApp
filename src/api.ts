@@ -441,7 +441,26 @@ export const adminApi = {
 };
 
 export const forumsApi = {
-  async getTopics(gameId: string, params?: { sort?: 'latest' | 'top' | 'activity'; page?: number; limit?: number; q?: string }) {
+  async getAllTopics(params?: { sort?: 'latest' | 'top' | 'activity'; page?: number; limit?: number; q?: string; gameId?: string }) {
+    const query = new URLSearchParams();
+    if (params?.sort) query.set('sort', params.sort);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.q) query.set('q', params.q);
+    if (params?.gameId) query.set('gameId', params.gameId);
+
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/forums${query.toString() ? `?${query.toString()}` : ''}`, {
+      headers,
+    });
+    if (!response.ok) throw new Error('Failed to fetch forum topics');
+    return response.json() as Promise<ApiPaginatedForumTopics>;
+  },
+
+  async getGameTopics(gameId: string, params?: { sort?: 'latest' | 'top' | 'activity'; page?: number; limit?: number; q?: string }) {
     const query = new URLSearchParams();
     if (params?.sort) query.set('sort', params.sort);
     if (params?.page) query.set('page', String(params.page));
@@ -452,11 +471,15 @@ export const forumsApi = {
     const authHeader = getAuthHeader();
     if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
 
-    const response = await fetch(`${API_BASE_URL}/forums/games/${gameId}/topics${query.toString() ? `?${query.toString()}` : ''}`, {
+    const response = await fetch(`${API_BASE_URL}/forums/${gameId}${query.toString() ? `?${query.toString()}` : ''}`, {
       headers,
     });
     if (!response.ok) throw new Error('Failed to fetch forum topics');
     return response.json() as Promise<ApiPaginatedForumTopics>;
+  },
+
+  async getTopics(gameId: string, params?: { sort?: 'latest' | 'top' | 'activity'; page?: number; limit?: number; q?: string }) {
+    return forumsApi.getGameTopics(gameId, params);
   },
 
   async createTopic(gameId: string, payload: { title: string; bodyMarkdown: string }) {
