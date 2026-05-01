@@ -37,6 +37,7 @@ body {
     radial-gradient(circle at right, rgba(255, 179, 71, 0.16), transparent 26%),
     linear-gradient(180deg, #06101e 0%, #09182c 52%, #050b14 100%);
   color: var(--text);
+  overflow-x: hidden;
 }
 
 button,
@@ -66,8 +67,8 @@ iframe {
 
 .app-shell {
   position: relative;
-  width: min(1440px, calc(100vw - 32px));
-  margin: 0 auto;
+  width: auto;
+  margin-inline: clamp(50px, 8vw, 150px);
   padding: 22px 0 30px;
 }
 
@@ -363,6 +364,7 @@ iframe {
   display: grid;
   grid-template-columns: minmax(220px, 340px) minmax(0, 1fr);
   gap: 12px;
+  min-width: 0;
 }
 
 .forum-topics-list {
@@ -387,6 +389,11 @@ iframe {
   margin: 4px 0 0;
   color: var(--muted);
   font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.forum-topic-item strong {
+  overflow-wrap: anywhere;
 }
 
 .forum-topic-item.active {
@@ -398,11 +405,28 @@ iframe {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+  min-width: 0;
+}
+
+.forum-comments-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(34, 199, 168, 0.4);
+  background: rgba(34, 199, 168, 0.14);
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
 }
 
 .forum-thread-view {
   display: grid;
   gap: 12px;
+  min-width: 0;
 }
 
 .forum-thread-header {
@@ -439,6 +463,10 @@ iframe {
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.03);
   line-height: 1.62;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .forum-markdown :is(h1, h2, h3, h4) {
@@ -455,10 +483,24 @@ iframe {
 
 .forum-markdown pre {
   overflow-x: auto;
+  max-width: 100%;
   padding: 10px;
   border-radius: 10px;
   background: rgba(6, 16, 31, 0.88);
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.forum-markdown img,
+.forum-markdown iframe,
+.forum-markdown video,
+.forum-markdown table {
+  max-width: 100%;
+}
+
+.forum-markdown img,
+.forum-markdown iframe,
+.forum-markdown video {
+  height: auto;
 }
 
 .forum-markdown code {
@@ -477,6 +519,7 @@ iframe {
   padding: 10px;
   display: grid;
   gap: 8px;
+  min-width: 0;
 }
 
 .forum-comment-header {
@@ -505,6 +548,16 @@ iframe {
 .forum-children {
   display: grid;
   gap: 8px;
+  min-width: 0;
+}
+
+.forum-create-comment textarea,
+.forum-reply-box textarea {
+  height: 120px;
+  min-height: 120px;
+  max-height: 120px;
+  resize: none;
+  overflow-y: auto;
 }
 
 @media (max-width: 1024px) {
@@ -1820,6 +1873,7 @@ iframe {
 @media (max-width: 860px) {
   .app-shell {
     width: min(100vw - 18px, 1440px);
+    margin-inline: auto;
     padding-top: 10px;
   }
 

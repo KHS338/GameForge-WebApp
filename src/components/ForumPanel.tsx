@@ -440,7 +440,7 @@ export function ForumPanel({ gameId }: ForumPanelProps) {
               <div className="forum-topic-meta">
                 {topic.pinned && <span className="pill static">Pinned</span>}
                 {topic.locked && <span className="pill static">Locked</span>}
-                <span className="pill static">{topic.commentCount} comments</span>
+                <span className="forum-comments-badge">{topic.commentCount} comments</span>
               </div>
             </button>
           ))}
