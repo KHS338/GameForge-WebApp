@@ -82,15 +82,69 @@ export interface ApiGame {
 
 export interface ApiTransaction {
   _id: string;
-  sellerId: string;
+  sellerId: string | { _id: string; username: string; email?: string };
   type: 'sale' | 'feature_fee';
-  gameId: { _id: string; title: string };
+  gameId: { _id: string; title: string; genre?: string };
   buyerId?: { _id: string; username: string; email: string };
   amount: number;
   platformCut: number;
   totalPrice: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ApiForumAuthor {
+  _id: string;
+  username: string;
+  role: 'buyer' | 'seller' | 'admin';
+}
+
+export interface ApiForumTopic {
+  _id: string;
+  gameId: string;
+  authorId: ApiForumAuthor;
+  title: string;
+  bodyMarkdown: string;
+  upvotes: number;
+  downvotes: number;
+  commentCount: number;
+  pinned: boolean;
+  locked: boolean;
+  reportsCount: number;
+  editedAt?: string | null;
+  lastActivityAt: string;
+  createdAt: string;
+  updatedAt: string;
+  viewerVote: -1 | 0 | 1;
+  canModerate: boolean;
+}
+
+export interface ApiForumComment {
+  _id: string;
+  gameId: string;
+  topicId: string;
+  authorId: ApiForumAuthor;
+  parentCommentId?: string | null;
+  depth: number;
+  bodyMarkdown: string;
+  upvotes: number;
+  downvotes: number;
+  replyCount: number;
+  reportsCount: number;
+  editedAt?: string | null;
+  isDeleted: boolean;
+  createdAt: string;
+  updatedAt: string;
+  viewerVote: -1 | 0 | 1;
+  canModerate: boolean;
+}
+
+export interface ApiPaginatedForumTopics {
+  items: ApiForumTopic[];
+  total: number;
+  page: number;
+  limit: number;
+  sort: 'latest' | 'top' | 'activity' | string;
 }
 
 // Games API
@@ -353,6 +407,23 @@ export const adminApi = {
     return response.json() as Promise<ApiUser[]>;
   },
 
+  async topUpUser(userId: string, amount: number) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/admin/users/${userId}/topup`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ amount }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      throw new Error(data?.message || 'Failed to top up user wallet');
+    }
+    return response.json() as Promise<{ message: string; user: ApiUser }>;
+  },
+
   async adminLogin(username: string, password: string): Promise<{ message: string; token: string; user: ApiUser }> {
     const response = await fetch(`${API_BASE_URL}/auth/admin-login`, {
       method: 'POST',
@@ -366,5 +437,230 @@ export const adminApi = {
     const data = await response.json();
     setToken(data.token);
     return data;
+  },
+};
+
+export const forumsApi = {
+  async getTopics(gameId: string, params?: { sort?: 'latest' | 'top' | 'activity'; page?: number; limit?: number; q?: string }) {
+    const query = new URLSearchParams();
+    if (params?.sort) query.set('sort', params.sort);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.q) query.set('q', params.q);
+
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/forums/games/${gameId}/topics${query.toString() ? `?${query.toString()}` : ''}`, {
+      headers,
+    });
+    if (!response.ok) throw new Error('Failed to fetch forum topics');
+    return response.json() as Promise<ApiPaginatedForumTopics>;
+  },
+
+  async createTopic(gameId: string, payload: { title: string; bodyMarkdown: string }) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/forums/games/${gameId}/topics`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) throw new Error('Failed to create topic');
+    return response.json() as Promise<ApiForumTopic>;
+  },
+
+  async getTopic(topicId: string) {
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/forums/topics/${topicId}`, { headers });
+    if (!response.ok) throw new Error('Failed to fetch topic');
+    return response.json() as Promise<ApiForumTopic>;
+  },
+
+  async updateTopic(topicId: string, payload: { title: string; bodyMarkdown: string }) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/forums/topics/${topicId}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) throw new Error('Failed to update topic');
+    return response.json() as Promise<ApiForumTopic>;
+  },
+
+  async deleteTopic(topicId: string) {
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/forums/topics/${topicId}`, {
+      method: 'DELETE',
+      headers,
+    });
+    if (!response.ok) throw new Error('Failed to delete topic');
+    return response.json() as Promise<{ message: string }>;
+  },
+
+  async pinTopic(topicId: string, pinned: boolean) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/forums/topics/${topicId}/pin`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ pinned }),
+    });
+    if (!response.ok) throw new Error('Failed to update topic pin state');
+    return response.json() as Promise<ApiForumTopic>;
+  },
+
+  async lockTopic(topicId: string, locked: boolean) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/forums/topics/${topicId}/lock`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ locked }),
+    });
+    if (!response.ok) throw new Error('Failed to update topic lock state');
+    return response.json() as Promise<ApiForumTopic>;
+  },
+
+  async voteTopic(topicId: string, value: -1 | 0 | 1) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/forums/topics/${topicId}/vote`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ value }),
+    });
+    if (!response.ok) throw new Error('Failed to vote on topic');
+    return response.json() as Promise<ApiForumTopic>;
+  },
+
+  async reportTopic(topicId: string, payload: { reason: string; details?: string }) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/forums/topics/${topicId}/report`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) throw new Error('Failed to report topic');
+    return response.json() as Promise<{ message: string }>;
+  },
+
+  async getComments(topicId: string, params?: { sort?: 'oldest' | 'latest' | 'top' }) {
+    const query = new URLSearchParams();
+    if (params?.sort) query.set('sort', params.sort);
+
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/forums/topics/${topicId}/comments${query.toString() ? `?${query.toString()}` : ''}`, {
+      headers,
+    });
+    if (!response.ok) throw new Error('Failed to fetch comments');
+    return response.json() as Promise<ApiForumComment[]>;
+  },
+
+  async createComment(topicId: string, payload: { bodyMarkdown: string }) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/forums/topics/${topicId}/comments`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) throw new Error('Failed to create comment');
+    return response.json() as Promise<ApiForumComment>;
+  },
+
+  async createReply(commentId: string, payload: { bodyMarkdown: string }) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/forums/comments/${commentId}/replies`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) throw new Error('Failed to create reply');
+    return response.json() as Promise<ApiForumComment>;
+  },
+
+  async updateComment(commentId: string, payload: { bodyMarkdown: string }) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/forums/comments/${commentId}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) throw new Error('Failed to update comment');
+    return response.json() as Promise<ApiForumComment>;
+  },
+
+  async deleteComment(commentId: string) {
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/forums/comments/${commentId}`, {
+      method: 'DELETE',
+      headers,
+    });
+    if (!response.ok) throw new Error('Failed to delete comment');
+    return response.json() as Promise<{ message: string }>;
+  },
+
+  async voteComment(commentId: string, value: -1 | 0 | 1) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/forums/comments/${commentId}/vote`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ value }),
+    });
+    if (!response.ok) throw new Error('Failed to vote on comment');
+    return response.json() as Promise<ApiForumComment>;
+  },
+
+  async reportComment(commentId: string, payload: { reason: string; details?: string }) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/forums/comments/${commentId}/report`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) throw new Error('Failed to report comment');
+    return response.json() as Promise<{ message: string }>;
   },
 };

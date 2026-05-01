@@ -18,6 +18,7 @@ import {
 import { authApi, clearToken, gamesApi, transactionsApi, adminApi, getToken, type ApiGame, type ApiUser, type CreateGamePayload, type ApiTransaction } from './api';
 import { genreOptions } from './data';
 import { login, logout, type RootState, type UserProfile } from './store';
+import { ForumPanel } from './components/ForumPanel';
 
 type AuthMode = 'login' | 'signup' | 'admin-login';
 type ViewKey = 'home' | 'games' | 'sell' | 'profile' | 'cart' | 'payment' | 'detail' | 'library' | 'sales' | 'admin';
@@ -538,7 +539,8 @@ function App() {
           throw new Error('All fields are required');
         }
 
-        const result = await authApi.register(authForm.email.trim(), authForm.name.trim(), authForm.password, authForm.role);
+        const signupRole: 'buyer' | 'seller' = authForm.role === 'seller' ? 'seller' : 'buyer';
+        const result = await authApi.register(authForm.email.trim(), authForm.name.trim(), authForm.password, signupRole);
         dispatch(login(mapUser(result.user)));
       } else if (authMode === 'admin-login') {
         if (!authForm.name.trim()) {
@@ -1274,6 +1276,8 @@ function App() {
                   <p>{selectedGame.description}</p>
                 </div>
               </article>
+
+              <ForumPanel gameId={selectedGame._id} />
 
               {role === 'seller' && ownGames.some((game) => game._id === selectedGame._id) && (
                 <article className="panel game-edit-panel">
@@ -2326,8 +2330,8 @@ function App() {
                             <td style={{ padding: '14px 16px' }}>
                               {tx.sellerId ? (
                                 <div>
-                                  <span style={{ display: 'block' }}>{tx.sellerId.username}</span>
-                                  <code style={{ fontSize: '0.65rem', color: 'var(--muted)' }}>{tx.sellerId._id}</code>
+                                  <span style={{ display: 'block' }}>{typeof tx.sellerId === 'string' ? tx.sellerId : tx.sellerId.username}</span>
+                                  <code style={{ fontSize: '0.65rem', color: 'var(--muted)' }}>{typeof tx.sellerId === 'string' ? tx.sellerId : tx.sellerId._id}</code>
                                 </div>
                               ) : <span style={{ color: 'var(--muted)' }}>N/A</span>}
                             </td>
