@@ -8,6 +8,8 @@ export interface UserProfile {
   email: string;
   role: UserRole;
   walletBalance: number;
+  notificationsEnabled: boolean;
+  notifications: NotificationItem[];
   city: string;
   bio: string;
   avatar: string;
@@ -30,6 +32,9 @@ export interface NotificationItem {
   title: string;
   detail: string;
   tone: 'success' | 'info' | 'warning';
+  category: 'purchase' | 'feature' | 'system';
+  read: boolean;
+  createdAt: string;
 }
 
 interface SessionState {

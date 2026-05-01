@@ -14,6 +14,7 @@ import {
   Trash2,
   ArrowLeft,
   DollarSign,
+  BellOff,
 } from 'lucide-react';
 import { authApi, clearToken, gamesApi, transactionsApi, adminApi, getToken, type ApiGame, type ApiUser, type CreateGamePayload, type ApiTransaction } from './api';
 import { genreOptions } from './data';
@@ -93,6 +94,16 @@ function mapUser(user: ApiUser): UserProfile {
     email: user.email,
     role: user.role === 'admin' ? 'admin' : user.role === 'seller' ? 'seller' : 'buyer',
     walletBalance: user.walletBalance ?? 0,
+    notificationsEnabled: user.notificationsEnabled ?? true,
+    notifications: (user.notifications ?? []).map((notification) => ({
+      id: notification._id,
+      title: notification.title,
+      detail: notification.detail,
+      tone: notification.tone,
+      category: notification.category,
+      read: notification.read,
+      createdAt: notification.createdAt,
+    })),
     city: '',
     bio: user.bio ?? '',
     avatar: user.avatar ?? initials(user.username),
@@ -229,6 +240,9 @@ function App() {
   }, [featuredIndex, featuredGames.length]);
 
   const role = session.user?.role ?? 'buyer';
+  const notificationsEnabled = session.user?.notificationsEnabled ?? true;
+  const sidebarNotifications = session.user?.notifications ?? [];
+  const unreadNotificationCount = sidebarNotifications.filter((notification) => !notification.read).length;
   const navItems = role === 'admin' ? adminViews : (role === 'seller' ? sellerViews : buyerViews);
   const cartGames = useMemo(() => games.filter((game) => cartIds.includes(game._id)), [cartIds, games]);
   const cartTotal = useMemo(() => cartGames.reduce((sum, game) => sum + getDiscountedPrice(game), 0), [cartGames]);
@@ -388,6 +402,44 @@ function App() {
       mounted = false;
     };
   }, [dispatch]);
+
+  useEffect(() => {
+    if (!session.isAuthenticated) {
+      return;
+    }
+
+    const token = getToken();
+    if (!token) {
+      return;
+    }
+
+    let mounted = true;
+    const stream = new EventSource(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/auth/me/notifications/stream?token=${encodeURIComponent(token)}`);
+
+    const refreshCurrentUser = async () => {
+      try {
+        const currentUser = await authApi.getCurrentUser();
+        if (mounted) {
+          dispatch(login(mapUser(currentUser)));
+        }
+      } catch (error) {
+        console.error('Could not refresh current user:', error);
+      }
+    };
+
+    stream.addEventListener('notification', () => {
+      void refreshCurrentUser();
+    });
+
+    stream.onerror = () => {
+      // Browser will retry automatically; keep the UI on the last known state.
+    };
+
+    return () => {
+      mounted = false;
+      stream.close();
+    };
+  }, [dispatch, session.isAuthenticated]);
 
   useEffect(() => {
     if (!session.isAuthenticated) {
@@ -609,6 +661,24 @@ function App() {
     setCheckoutMessage(null);
     setGameMessage(null);
     setAuthForm(emptyAuthForm);
+  };
+
+  const handleNotificationToggle = async (enabled: boolean) => {
+    try {
+      const updatedUser = await authApi.updateNotificationSettings(enabled);
+      dispatch(login(mapUser(updatedUser)));
+    } catch (error) {
+      console.error('Could not update notification settings:', error);
+    }
+  };
+
+  const handleNotificationRead = async (notificationId: string) => {
+    try {
+      const updatedUser = await authApi.markNotificationRead(notificationId);
+      dispatch(login(mapUser(updatedUser)));
+    } catch (error) {
+      console.error('Could not mark notification read:', error);
+    }
   };
 
   const openGameDetail = (gameId: string) => {
@@ -1054,8 +1124,16 @@ function App() {
         )}
 
         <div className="topbar-actions">
-          <button type="button" className="icon-button" title="Notifications">
-            <Bell size={18} />
+          <button
+            type="button"
+            className={`icon-button ${!notificationsEnabled ? 'notifications-disabled' : ''}`}
+            title={notificationsEnabled ? 'Notifications on — click to toggle' : 'Notifications off — click to toggle'}
+            onClick={() => void handleNotificationToggle(!notificationsEnabled)}
+          >
+            {notificationsEnabled ? <Bell size={18} /> : <BellOff size={18} />}
+            {notificationsEnabled && unreadNotificationCount > 0 && (
+              <span className="topbar-badge">{unreadNotificationCount}</span>
+            )}
           </button>
           <div className="role-chip">
             <ShieldCheck size={14} />
@@ -1126,6 +1204,45 @@ function App() {
                   : 'You can browse games and buy.'}
             </p>
           </div>
+
+            <div className="sidebar-card notification-panel">
+              <div className="card-header compact notification-panel-header">
+                <div className="notification-panel-title">
+                  <Bell size={16} />
+                  <span>Notifications</span>
+                  {unreadNotificationCount > 0 && <strong className="notification-badge">{unreadNotificationCount}</strong>}
+                </div>
+                <label className="inline-toggle notification-toggle">
+                  <input
+                    type="checkbox"
+                    checked={notificationsEnabled}
+                    onChange={(event) => void handleNotificationToggle(event.target.checked)}
+                  />
+                  <span className="toggle-label">{notificationsEnabled ? 'On' : 'Off'}</span>
+                </label>
+              </div>
+
+              {sidebarNotifications.length === 0 ? (
+                <p className="muted-copy">No notifications yet.</p>
+              ) : (
+                <div className="notification-stack">
+                  {sidebarNotifications.slice(0, 5).map((notification) => (
+                    <button
+                      key={notification.id}
+                      type="button"
+                      className={`notification ${notification.tone} ${notification.read ? 'read' : 'unread'}`}
+                      onClick={() => void handleNotificationRead(notification.id)}
+                    >
+                      <div className="notification-copy">
+                        <strong>{notification.title}</strong>
+                        <span>{notification.detail}</span>
+                      </div>
+                      <small>{new Date(notification.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
         </aside>
 
         <main className="content">

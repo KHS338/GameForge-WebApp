@@ -74,7 +74,7 @@ router.get('/transactions', verifyToken, requireAdmin, async (req: AuthRequest, 
 });
 
 // Get all non-admin users (for filter dropdown)
-router.get('/users', verifyToken, requireAdmin, async (req: AuthRequest, res) => {
+router.get('/users', verifyToken, requireAdmin, async (_req: AuthRequest, res) => {
   try {
     const users = await User.find({ role: { $ne: 'admin' } }).select('-password').sort({ username: 1 });
     res.json(users);
