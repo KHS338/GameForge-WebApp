@@ -75,6 +75,16 @@ export interface ApiGame {
   };
   downloads: number;
   revenue: number;
+  reviews?: {
+    _id: string;
+    userId: string;
+    username: string;
+    rating: number;
+    comment: string;
+    likes: string[];
+    dislikes: string[];
+    createdAt: string;
+  }[];
   createdAt: string;
   updatedAt: string;
   tags: string[];
@@ -182,6 +192,46 @@ export const gamesApi = {
       body: JSON.stringify(updates),
     });
     if (!response.ok) throw new Error('Failed to update game');
+    return response.json() as Promise<ApiGame>;
+  },
+
+  async addReview(id: string, rating: number, comment: string) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/games/${id}/reviews`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ rating, comment }),
+    });
+    if (!response.ok) throw new Error('Failed to add review');
+    return response.json() as Promise<ApiGame>;
+  },
+
+  async likeReview(gameId: string, reviewId: string) {
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/games/${gameId}/reviews/${reviewId}/like`, {
+      method: 'POST',
+      headers,
+    });
+    if (!response.ok) throw new Error('Failed to toggle like');
+    return response.json() as Promise<ApiGame>;
+  },
+
+  async dislikeReview(gameId: string, reviewId: string) {
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/games/${gameId}/reviews/${reviewId}/dislike`, {
+      method: 'POST',
+      headers,
+    });
+    if (!response.ok) throw new Error('Failed to toggle dislike');
     return response.json() as Promise<ApiGame>;
   },
 

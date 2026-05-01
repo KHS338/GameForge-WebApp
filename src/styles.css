@@ -762,6 +762,12 @@ iframe {
   border-color: rgba(109, 247, 221, 0.3);
 }
 
+.featured-slide.active {
+  outline: 3px solid rgba(34, 199, 168, 0.18);
+  transform: translateY(-4px);
+}
+
+
 .featured-slide:focus,
 .game-card.clickable:focus,
 .crud-card.clickable:focus {
