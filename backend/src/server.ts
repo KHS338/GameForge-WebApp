@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import bcryptjs from 'bcryptjs';
 import gamesRouter from './routes/games.js';
 import authRouter from './routes/auth.js';
 import transactionsRouter from './routes/transactions.js';
@@ -35,28 +34,6 @@ app.use('/api/admin', adminRouter);
 app.use((_req, res) => {
   res.status(404).json({ message: 'Route not found' });
 });
-
-async function seedAdmins() {
-  try {
-    const adminPasswords = await bcryptjs.hash('12345678', 10);
-    const adminsToSeed = [
-      { email: 'hamza@gameforge.com', username: 'hamza' },
-      { email: 'shaheer@gameforge.com', username: 'shaheer' }
-    ];
-
-    for (const adminData of adminsToSeed) {
-      const exists = await User.findOne({ username: adminData.username });
-      if (!exists) {
-        await User.create({
-          ...adminData,
-          password: adminPasswords, // The model hook hashes it, but if we supply pre-hashed, the hook might hash it again? Wait, the hook hashes if modified. I'll just supply '12345678' and let the hook do it.
-        });
-      }
-    }
-  } catch (error) {
-    console.error('Error seeding admins:', error);
-  }
-}
 
 // Connect to MongoDB and start server
 async function startServer() {

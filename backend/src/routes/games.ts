@@ -3,8 +3,27 @@ import { Game } from '../models/Game.js';
 import { User } from '../models/User.js';
 import { Transaction } from '../models/Transaction.js';
 import { verifyToken, AuthRequest } from '../middleware/auth.js';
+import { pushNotificationEvent } from '../notifications.js';
 
 const router = express.Router();
+
+function pushNotification(user: any, notification: { title: string; detail: string; tone?: 'success' | 'info' | 'warning'; category?: 'purchase' | 'feature' | 'system' }) {
+  if (!user || user.notificationsEnabled === false) {
+    return;
+  }
+
+  user.notifications = user.notifications || [];
+  user.notifications.unshift({
+    title: notification.title,
+    detail: notification.detail,
+    tone: notification.tone || 'info',
+    category: notification.category || 'system',
+    read: false,
+    createdAt: new Date(),
+  });
+
+  user.notifications = user.notifications.slice(0, 25);
+}
 
 // Get all games
 router.get('/', async (req, res) => {
@@ -166,6 +185,22 @@ router.post('/:id/purchase', verifyToken, async (req: AuthRequest, res) => {
       totalPrice: discountedPrice,
     });
 
+    pushNotification(buyer, {
+      title: 'Purchase completed',
+      detail: `You bought ${game.title} for $${discountedPrice.toFixed(2)}.`,
+      tone: 'success',
+      category: 'purchase',
+    });
+    pushNotification(seller, {
+      title: 'New sale',
+      detail: `${buyer.username || buyer.email} bought ${game.title}. Your wallet received $${sellerCredit.toFixed(2)}.`,
+      tone: 'success',
+      category: 'purchase',
+    });
+
+    pushNotificationEvent(buyer._id.toString(), { type: 'notification', at: new Date().toISOString() });
+    pushNotificationEvent(seller._id.toString(), { type: 'notification', at: new Date().toISOString() });
+
     await Promise.all([buyer.save(), seller.save(), game.save(), transaction.save()]);
 
     const updatedGame = await Game.findById(game._id).populate('sellerId', 'username');
@@ -244,6 +279,15 @@ router.post('/:id/feature', verifyToken, async (req: AuthRequest, res) => {
       amount: -featureFee,
       totalPrice: featureFee,
     });
+
+    pushNotification(seller, {
+      title: 'Feature fee charged',
+      detail: `${game.title} was featured for 7 days. $${featureFee.toFixed(2)} was deducted from your wallet.`,
+      tone: 'warning',
+      category: 'feature',
+    });
+
+    pushNotificationEvent(seller._id.toString(), { type: 'notification', at: new Date().toISOString() });
 
     await Promise.all([seller.save(), game.save(), transaction.save()]);
 
@@ -328,6 +372,124 @@ router.delete('/:id', verifyToken, async (req: AuthRequest, res) => {
     res.json({ message: 'Game deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: 'Error deleting game', error });
+  }
+});
+
+// Add review (buyer who owns game only)
+router.post('/:id/reviews', verifyToken, async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: 'Not authenticated' });
+    }
+
+    const game = await Game.findById(req.params.id);
+    if (!game) {
+      return res.status(404).json({ message: 'Game not found' });
+    }
+
+    const buyer = await User.findById(req.user.id);
+    if (!buyer || buyer.role !== 'buyer') {
+      return res.status(403).json({ message: 'Only buyers can review games' });
+    }
+
+    const hasBought = buyer.purchases.some((pid) => pid.toString() === game._id.toString());
+    if (!hasBought) {
+      return res.status(403).json({ message: 'You must buy the game before reviewing it' });
+    }
+
+    const hasReviewed = game.reviews?.some((r: any) => r.userId.toString() === req.user!.id);
+    if (hasReviewed) {
+      return res.status(400).json({ message: 'You have already reviewed this game' });
+    }
+
+    const { rating, comment } = req.body;
+    if (!rating || !comment || rating < 1 || rating > 5) {
+      return res.status(400).json({ message: 'Valid rating (1-5) and comment are required' });
+    }
+
+    if (!game.reviews) {
+      game.reviews = [];
+    }
+
+    game.reviews.push({
+      userId: buyer._id,
+      username: buyer.username,
+      rating,
+      comment,
+      likes: [],
+      dislikes: [],
+    } as any);
+
+    // Update overall rating
+    const totalRating = game.reviews.reduce((acc: number, r: any) => acc + r.rating, 0);
+    game.rating = totalRating / game.reviews.length;
+
+    await game.save();
+    
+    // Return updated game
+    const updatedGame = await Game.findById(req.params.id).populate('sellerId', 'username email');
+    res.status(201).json(updatedGame);
+  } catch (error) {
+    console.error('Error adding review:', error);
+    res.status(500).json({ message: 'Error adding review', error });
+  }
+});
+
+// Like a review (any auth user)
+router.post('/:id/reviews/:reviewId/like', verifyToken, async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) return res.status(401).json({ message: 'Not authenticated' });
+
+    const game = await Game.findById(req.params.id);
+    if (!game || !game.reviews) return res.status(404).json({ message: 'Game or reviews not found' });
+
+    const review = game.reviews.find((item: any) => item._id?.toString() === req.params.reviewId) as any;
+    if (!review) return res.status(404).json({ message: 'Review not found' });
+
+    const userIdStr = req.user.id;
+    const hasLiked = review.likes.some((id: any) => id.toString() === userIdStr);
+    
+    if (hasLiked) {
+      review.likes = review.likes.filter((id: any) => id.toString() !== userIdStr);
+    } else {
+      review.likes.push(req.user.id as any);
+      review.dislikes = review.dislikes.filter((id: any) => id.toString() !== userIdStr);
+    }
+
+    await game.save();
+    const updatedGame = await Game.findById(req.params.id).populate('sellerId', 'username email');
+    res.json(updatedGame);
+  } catch (error) {
+    res.status(500).json({ message: 'Error toggling like', error });
+  }
+});
+
+// Dislike a review (any auth user)
+router.post('/:id/reviews/:reviewId/dislike', verifyToken, async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) return res.status(401).json({ message: 'Not authenticated' });
+
+    const game = await Game.findById(req.params.id);
+    if (!game || !game.reviews) return res.status(404).json({ message: 'Game or reviews not found' });
+
+    const review = game.reviews.find((item: any) => item._id?.toString() === req.params.reviewId) as any;
+    if (!review) return res.status(404).json({ message: 'Review not found' });
+
+    const userIdStr = req.user.id;
+    const hasDisliked = review.dislikes.some((id: any) => id.toString() === userIdStr);
+    
+    if (hasDisliked) {
+      review.dislikes = review.dislikes.filter((id: any) => id.toString() !== userIdStr);
+    } else {
+      review.dislikes.push(req.user.id as any);
+      review.likes = review.likes.filter((id: any) => id.toString() !== userIdStr);
+    }
+
+    await game.save();
+    const updatedGame = await Game.findById(req.params.id).populate('sellerId', 'username email');
+    res.json(updatedGame);
+  } catch (error) {
+    res.status(500).json({ message: 'Error toggling dislike', error });
   }
 });
 

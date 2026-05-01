@@ -609,6 +609,27 @@ iframe {
   place-items: center;
 }
 
+.icon-button.notifications-disabled {
+  opacity: 0.5;
+  filter: grayscale(0.6);
+}
+
+.topbar-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  display: inline-grid;
+  place-items: center;
+  font-size: 0.75rem;
+  background: var(--accent-strong);
+  color: #02120f;
+  border-radius: 999px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+}
+
 .icon-button.danger {
   color: #ffd9d9;
   border-color: rgba(255, 109, 109, 0.3);
@@ -761,6 +782,12 @@ iframe {
 .game-card.clickable:hover {
   border-color: rgba(109, 247, 221, 0.3);
 }
+
+.featured-slide.active {
+  outline: 3px solid rgba(34, 199, 168, 0.18);
+  transform: translateY(-4px);
+}
+
 
 .featured-slide:focus,
 .game-card.clickable:focus,
@@ -1427,6 +1454,73 @@ iframe {
 
 .notification {
   text-align: left;
+}
+
+.notification-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.notification-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.notification-panel-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.notification-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(109, 247, 221, 0.18);
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+}
+
+.notification-toggle {
+  margin-left: auto;
+}
+
+.notification-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.notification {
+  display: grid;
+  gap: 8px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  width: 100%;
+}
+
+.notification.read {
+  opacity: 0.72;
+}
+
+.notification.unread {
+  box-shadow: inset 0 0 0 1px rgba(109, 247, 221, 0.18);
+}
+
+.notification-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.notification-copy span,
+.muted-copy {
+  color: var(--muted);
 }
 
 .notification.success {

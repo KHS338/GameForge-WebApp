@@ -21,12 +21,24 @@ function getAuthHeader() {
   return {};
 }
 
+export interface ApiNotification {
+  _id: string;
+  title: string;
+  detail: string;
+  tone: 'success' | 'info' | 'warning';
+  category: 'purchase' | 'feature' | 'system';
+  read: boolean;
+  createdAt: string;
+}
+
 export interface ApiUser {
   _id: string;
   email: string;
   username: string;
   role: 'buyer' | 'seller' | 'admin';
   walletBalance: number;
+  notificationsEnabled?: boolean;
+  notifications?: ApiNotification[];
   avatar?: string;
   bio?: string;
   socialLinks?: {
@@ -75,6 +87,16 @@ export interface ApiGame {
   };
   downloads: number;
   revenue: number;
+  reviews?: {
+    _id: string;
+    userId: string;
+    username: string;
+    rating: number;
+    comment: string;
+    likes: string[];
+    dislikes: string[];
+    createdAt: string;
+  }[];
   createdAt: string;
   updatedAt: string;
   tags: string[];
@@ -185,6 +207,46 @@ export const gamesApi = {
     return response.json() as Promise<ApiGame>;
   },
 
+  async addReview(id: string, rating: number, comment: string) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/games/${id}/reviews`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ rating, comment }),
+    });
+    if (!response.ok) throw new Error('Failed to add review');
+    return response.json() as Promise<ApiGame>;
+  },
+
+  async likeReview(gameId: string, reviewId: string) {
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/games/${gameId}/reviews/${reviewId}/like`, {
+      method: 'POST',
+      headers,
+    });
+    if (!response.ok) throw new Error('Failed to toggle like');
+    return response.json() as Promise<ApiGame>;
+  },
+
+  async dislikeReview(gameId: string, reviewId: string) {
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/games/${gameId}/reviews/${reviewId}/dislike`, {
+      method: 'POST',
+      headers,
+    });
+    if (!response.ok) throw new Error('Failed to toggle dislike');
+    return response.json() as Promise<ApiGame>;
+  },
+
   async delete(id: string) {
     const headers: Record<string, string> = {};
     const authHeader = getAuthHeader();
@@ -276,6 +338,33 @@ export const authApi = {
       body: JSON.stringify(updates),
     });
     if (!response.ok) throw new Error('Failed to update profile');
+    return response.json() as Promise<ApiUser>;
+  },
+
+  async updateNotificationSettings(enabled: boolean) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/auth/me/notifications`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ enabled }),
+    });
+    if (!response.ok) throw new Error('Failed to update notification settings');
+    return response.json() as Promise<ApiUser>;
+  },
+
+  async markNotificationRead(notificationId: string) {
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/auth/me/notifications/${notificationId}/read`, {
+      method: 'PATCH',
+      headers,
+    });
+    if (!response.ok) throw new Error('Failed to mark notification read');
     return response.json() as Promise<ApiUser>;
   },
 
