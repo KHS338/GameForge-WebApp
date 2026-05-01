@@ -451,7 +451,7 @@ export function ForumPanel({ gameId }: ForumPanelProps) {
             <button
               key={topic._id}
               type="button"
-              className={selectedTopicId === topic._id ? 'forum-topic-item active' : 'forum-topic-item'}
+              className={selectedTopicId === topic._id ? 'forum-topic-item active expanded' : 'forum-topic-item'}
               onClick={() => setSelectedTopicId(topic._id)}
             >
               <div>
@@ -463,6 +463,12 @@ export function ForumPanel({ gameId }: ForumPanelProps) {
                 {topic.locked && <span className="pill static">Locked</span>}
                 <span className="forum-comments-badge">{topic.commentCount} comments</span>
               </div>
+              {selectedTopicId === topic._id && (
+                <div className="forum-topic-preview">
+                  <div className="forum-markdown preview" dangerouslySetInnerHTML={{ __html: markdownToSafeHtml(topic.bodyMarkdown) }} />
+                  <span className="forum-topic-expanded-hint">Selected topic expands into the thread panel</span>
+                </div>
+              )}
             </button>
           ))}
         </div>

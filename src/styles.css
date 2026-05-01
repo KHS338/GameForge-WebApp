@@ -385,6 +385,13 @@ iframe {
   padding: 10px;
 }
 
+.forum-topic-item.expanded {
+  gap: 12px;
+  padding: 14px;
+  border-color: rgba(34, 199, 168, 0.35);
+  background: rgba(34, 199, 168, 0.06);
+}
+
 .forum-topic-item p {
   margin: 4px 0 0;
   color: var(--muted);
@@ -406,6 +413,34 @@ iframe {
   gap: 6px;
   flex-wrap: wrap;
   min-width: 0;
+}
+
+.forum-topic-preview {
+  display: grid;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.forum-topic-preview .preview {
+  max-height: 120px;
+  overflow: hidden;
+  position: relative;
+}
+
+.forum-topic-preview .preview::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 36px;
+  background: linear-gradient(180deg, rgba(7, 17, 31, 0), rgba(7, 17, 31, 0.94));
+}
+
+.forum-topic-expanded-hint {
+  font-size: 0.75rem;
+  color: var(--accent-strong);
+  opacity: 0.9;
 }
 
 .forum-comments-badge {
