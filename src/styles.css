@@ -560,6 +560,99 @@ iframe {
   overflow-y: auto;
 }
 
+.report-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(3, 8, 18, 0.78);
+  backdrop-filter: blur(5px);
+}
+
+.report-dialog {
+  width: min(560px, calc(100vw - 36px));
+  border-radius: 16px;
+  border: 1px solid rgba(164, 198, 255, 0.2);
+  background: rgba(10, 20, 39, 0.96);
+  box-shadow: 0 22px 80px rgba(0, 0, 0, 0.48);
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.report-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.report-dialog-header h3 {
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.report-dialog-target {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 9px 11px;
+  overflow-wrap: anywhere;
+}
+
+.report-dialog-form {
+  display: grid;
+  gap: 12px;
+}
+
+.report-dialog-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.report-dialog-form span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.report-dialog-form select,
+.report-dialog-form textarea {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(7, 16, 31, 0.64);
+  color: var(--text);
+  padding: 10px 12px;
+}
+
+.report-dialog-form textarea {
+  min-height: 120px;
+  max-height: 220px;
+  resize: vertical;
+}
+
+.report-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .report-dialog {
+    width: calc(100vw - 22px);
+  }
+
+  .report-dialog-actions {
+    flex-direction: column;
+  }
+}
+
 @media (max-width: 1024px) {
   .forum-topics-grid {
     grid-template-columns: 1fr;

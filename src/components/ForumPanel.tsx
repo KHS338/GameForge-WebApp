@@ -3,12 +3,19 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { Flag, Lock, MessageSquare, Pin, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { forumsApi, type ApiForumComment, type ApiForumTopic } from '../api';
+import { ReportDialog } from './ReportDialog';
 
 type TopicSort = 'activity' | 'latest' | 'top';
 type CommentSort = 'oldest' | 'latest' | 'top';
 
 interface ForumPanelProps {
   gameId: string;
+}
+
+interface ReportTarget {
+  id: string;
+  type: 'topic' | 'comment';
+  label: string;
 }
 
 function markdownToSafeHtml(markdown: string) {
@@ -37,6 +44,8 @@ export function ForumPanel({ gameId }: ForumPanelProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [replyOpen, setReplyOpen] = useState<Record<string, boolean>>({});
+  const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
+  const [reportSubmitting, setReportSubmitting] = useState(false);
 
   const childrenByParent = useMemo(() => {
     const grouped = new Map<string, ApiForumComment[]>();
@@ -262,31 +271,43 @@ export function ForumPanel({ gameId }: ForumPanelProps) {
     }
   }
 
-  async function handleReportTopic(topicId: string) {
-    const reason = window.prompt('Why are you reporting this topic?');
-    if (!reason?.trim()) {
-      return;
-    }
-
-    try {
-      await forumsApi.reportTopic(topicId, { reason: reason.trim() });
-      setMessage('Topic reported.');
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Could not report topic');
-    }
+  function handleReportTopic(topic: ApiForumTopic) {
+    setReportTarget({
+      id: topic._id,
+      type: 'topic',
+      label: topic.title,
+    });
   }
 
-  async function handleReportComment(commentId: string) {
-    const reason = window.prompt('Why are you reporting this comment?');
-    if (!reason?.trim()) {
+  function handleReportComment(comment: ApiForumComment) {
+    const preview = comment.bodyMarkdown.length > 90 ? `${comment.bodyMarkdown.slice(0, 90)}...` : comment.bodyMarkdown;
+    setReportTarget({
+      id: comment._id,
+      type: 'comment',
+      label: preview || 'Comment',
+    });
+  }
+
+  async function handleSubmitReport(payload: { reason: string; details: string }) {
+    if (!reportTarget) {
       return;
     }
 
+    setReportSubmitting(true);
     try {
-      await forumsApi.reportComment(commentId, { reason: reason.trim() });
-      setMessage('Comment reported.');
+      if (reportTarget.type === 'topic') {
+        await forumsApi.reportTopic(reportTarget.id, payload);
+        setMessage('Topic reported.');
+      } else {
+        await forumsApi.reportComment(reportTarget.id, payload);
+        setMessage('Comment reported.');
+      }
+
+      setReportTarget(null);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Could not report comment');
+      setMessage(error instanceof Error ? error.message : `Could not report ${reportTarget.type}`);
+    } finally {
+      setReportSubmitting(false);
     }
   }
 
@@ -351,7 +372,7 @@ export function ForumPanel({ gameId }: ForumPanelProps) {
             </>
           )}
           {!comment.isDeleted && (
-            <button type="button" className="cta ghost compact" onClick={() => void handleReportComment(comment._id)}>
+            <button type="button" className="cta ghost compact" onClick={() => handleReportComment(comment)}>
               <Flag size={14} /> Report
             </button>
           )}
@@ -463,7 +484,7 @@ export function ForumPanel({ gameId }: ForumPanelProps) {
                   <button type="button" className={selectedTopic.viewerVote === -1 ? 'cta ghost compact active' : 'cta ghost compact'} onClick={() => void handleTopicVote(selectedTopic._id, selectedTopic.viewerVote, -1)}>
                     <ThumbsDown size={14} /> {selectedTopic.downvotes}
                   </button>
-                  <button type="button" className="cta ghost compact" onClick={() => void handleReportTopic(selectedTopic._id)}>
+                  <button type="button" className="cta ghost compact" onClick={() => handleReportTopic(selectedTopic)}>
                     <Flag size={14} /> Report
                   </button>
                   {selectedTopic.canModerate && (
@@ -525,6 +546,19 @@ export function ForumPanel({ gameId }: ForumPanelProps) {
           )}
         </div>
       </div>
+
+      <ReportDialog
+        isOpen={Boolean(reportTarget)}
+        targetType={reportTarget?.type ?? 'topic'}
+        targetLabel={reportTarget?.label ?? ''}
+        isSubmitting={reportSubmitting}
+        onClose={() => {
+          if (!reportSubmitting) {
+            setReportTarget(null);
+          }
+        }}
+        onSubmit={handleSubmitReport}
+      />
     </article>
   );
 }
