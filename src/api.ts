@@ -80,6 +80,10 @@ export interface ApiGame {
   tags: string[];
 }
 
+export interface ApiRecommendedGame extends ApiGame {
+  score?: number;
+}
+
 export interface ApiTransaction {
   _id: string;
   sellerId: string | { _id: string; username: string; email?: string };
@@ -257,6 +261,30 @@ export const gamesApi = {
     if (!response.ok) throw new Error('Failed to fetch tags');
     const data = await response.json() as { tags: string[] };
     return data.tags;
+  },
+};
+
+export const recommendationsApi = {
+  async getPopular() {
+    const response = await fetch(`${API_BASE_URL}/recommendations/popular`);
+    if (!response.ok) throw new Error('Failed to fetch popular recommendations');
+    return response.json() as Promise<ApiRecommendedGame[]>;
+  },
+
+  async getForYou() {
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/recommendations/me`, { headers });
+    if (!response.ok) throw new Error('Failed to fetch personalized recommendations');
+    return response.json() as Promise<ApiRecommendedGame[]>;
+  },
+
+  async getSimilar(gameId: string) {
+    const response = await fetch(`${API_BASE_URL}/recommendations/game/${gameId}`);
+    if (!response.ok) throw new Error('Failed to fetch similar games');
+    return response.json() as Promise<ApiRecommendedGame[]>;
   },
 };
 

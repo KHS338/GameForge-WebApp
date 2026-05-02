@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
   Bell,
+  Compass,
+  Flame,
   Gamepad2,
   LogOut,
   Menu,
@@ -14,14 +16,15 @@ import {
   Trash2,
   ArrowLeft,
   DollarSign,
+  WandSparkles,
 } from 'lucide-react';
-import { authApi, clearToken, gamesApi, transactionsApi, adminApi, getToken, type ApiGame, type ApiUser, type CreateGamePayload, type ApiTransaction } from './api';
+import { authApi, clearToken, gamesApi, transactionsApi, adminApi, getToken, recommendationsApi, type ApiGame, type ApiUser, type CreateGamePayload, type ApiTransaction, type ApiRecommendedGame } from './api';
 import { genreOptions } from './data';
 import { login, logout, type RootState, type UserProfile } from './store';
 import { ForumPage } from './components/ForumPage';
 
 type AuthMode = 'login' | 'signup' | 'admin-login';
-type ViewKey = 'home' | 'games' | 'sell' | 'profile' | 'cart' | 'payment' | 'detail' | 'library' | 'sales' | 'admin' | 'forums';
+type ViewKey = 'home' | 'discover' | 'games' | 'sell' | 'profile' | 'cart' | 'payment' | 'detail' | 'library' | 'sales' | 'admin' | 'forums';
 
 type Role = 'buyer' | 'seller' | 'admin';
 
@@ -46,9 +49,9 @@ const emptyGameForm = {
 
 const discountOptions = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 
-const buyerViews: ViewKey[] = ['home', 'games', 'forums', 'library', 'cart', 'profile'];
-const sellerViews: ViewKey[] = ['home', 'sell', 'forums', 'sales', 'profile'];
-const adminViews: ViewKey[] = ['home', 'forums', 'admin', 'profile'];
+const buyerViews: ViewKey[] = ['home', 'discover', 'games', 'forums', 'library', 'cart', 'profile'];
+const sellerViews: ViewKey[] = ['home', 'discover', 'sell', 'forums', 'sales', 'profile'];
+const adminViews: ViewKey[] = ['home', 'discover', 'forums', 'admin', 'profile'];
 
 function initials(value: string) {
   const parts = value.trim().split(/\s+/).filter(Boolean);
@@ -138,6 +141,11 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGenre, setSelectedGenre] = useState<string>('All');
   const [availableTags, setAvailableTags] = useState<string[]>([]);
+  const [popularRecommendations, setPopularRecommendations] = useState<ApiRecommendedGame[]>([]);
+  const [forYouRecommendations, setForYouRecommendations] = useState<ApiRecommendedGame[]>([]);
+  const [similarRecommendations, setSimilarRecommendations] = useState<ApiRecommendedGame[]>([]);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
   const [cartIds, setCartIds] = useState<string[]>([]);
   const [checkoutMessage, setCheckoutMessage] = useState<string | null>(null);
   const [gameMessage, setGameMessage] = useState<string | null>(null);
@@ -502,6 +510,49 @@ function App() {
   }, [activeView, games, selectedGame]);
 
   useEffect(() => {
+    if (!session.isAuthenticated) {
+      return;
+    }
+
+    let mounted = true;
+
+    async function loadRecommendations() {
+      setRecommendationsLoading(true);
+      setRecommendationsError(null);
+
+      try {
+        const [popular, forYou, similar] = await Promise.all([
+          recommendationsApi.getPopular(),
+          recommendationsApi.getForYou().catch(() => [] as ApiRecommendedGame[]),
+          selectedGameId ? recommendationsApi.getSimilar(selectedGameId).catch(() => [] as ApiRecommendedGame[]) : Promise.resolve([] as ApiRecommendedGame[]),
+        ]);
+
+        if (!mounted) {
+          return;
+        }
+
+        setPopularRecommendations(popular);
+        setForYouRecommendations(forYou);
+        setSimilarRecommendations(similar);
+      } catch (error) {
+        if (mounted) {
+          setRecommendationsError(error instanceof Error ? error.message : 'Could not load recommendations');
+        }
+      } finally {
+        if (mounted) {
+          setRecommendationsLoading(false);
+        }
+      }
+    }
+
+    void loadRecommendations();
+
+    return () => {
+      mounted = false;
+    };
+  }, [session.isAuthenticated, selectedGameId]);
+
+  useEffect(() => {
     if (selectedGame) {
       setGameEditForm({
         title: selectedGame.title,
@@ -821,6 +872,49 @@ function App() {
     }
   };
 
+  const renderRecommendationCard = (game: ApiRecommendedGame) => {
+    const cover = game.media?.cover?.trim() ? game.media.cover : buildPlaceholderCover(game.title);
+    const score = typeof game.score === 'number' ? game.score : null;
+
+    return (
+      <article
+        key={game._id}
+        className="game-card clickable"
+        role="button"
+        tabIndex={0}
+        onClick={() => openGameDetail(game._id)}
+      >
+        <img className="game-card-image" src={cover} alt={game.title} />
+        <div className="game-card-top">
+          <span className="genre-tag">{game.genre}</span>
+          {game.featured && <span className="featured-tag">Featured</span>}
+        </div>
+        <h3>{game.title}</h3>
+        <p>{game.description}</p>
+        <div className="tag-row compact">
+          {(game.tags?.length ? game.tags : [game.genre]).slice(0, 3).map((tag) => (
+            <span key={`${game._id}-${tag}`} className="pill static">
+              {tag}
+            </span>
+          ))}
+        </div>
+        <div className="game-card-meta">
+          <span>{game.studio}</span>
+          <strong>${getDiscountedPrice(game).toFixed(2)}</strong>
+        </div>
+        <div className="price-stack compact">
+          <span>${game.price.toFixed(2)} · {getDiscountPercent(game)}% off</span>
+        </div>
+        <div className="game-card-footer">
+          <span>
+            <Star size={14} /> {game.rating.toFixed(1)}
+          </span>
+          <span>{score !== null ? `Score ${score.toFixed(2)}` : 'Recommended'}</span>
+        </div>
+      </article>
+    );
+  };
+
   if (booting) {
     return (
       <div className="auth-screen">
@@ -1046,6 +1140,7 @@ function App() {
                 <span>{item}</span>
                 <small>
                   {item === 'home' ? 'Main dashboard' : 
+                   item === 'discover' ? 'Curated picks' : 
                    item === 'games' ? 'Browse and buy' : 
                    item === 'forums' ? 'Game discussions' : 
                    item === 'sell' ? 'Create listings' : 
@@ -1105,6 +1200,10 @@ function App() {
                       Add listing
                     </button>
                   )}
+                  <button type="button" className="cta ghost" onClick={() => setActiveView('discover')}>
+                    <Compass size={16} />
+                    Discover games
+                  </button>
                 </div>
               </div>
 
@@ -1173,6 +1272,94 @@ function App() {
                     </article>
                   );
                 })}
+              </div>
+            </section>
+          )}
+
+          {activeView === 'discover' && (
+            <section className="panel">
+              <div className="section-heading">
+                <div>
+                  <span className="eyebrow">Discover</span>
+                  <h2>Curated discovery hub</h2>
+                </div>
+              </div>
+
+              <p className="auth-message">Your feed blends Atlas vector matches, popular titles, and games similar to the one you last opened.</p>
+
+              {recommendationsLoading && <p className="auth-message">Loading recommendation feed...</p>}
+              {recommendationsError && <p className="auth-message error">{recommendationsError}</p>}
+
+              <div style={{ display: 'grid', gap: '24px' }}>
+                <section>
+                  <div className="section-heading compact">
+                    <div>
+                      <span className="eyebrow">For you</span>
+                      <h2>Personalized picks</h2>
+                    </div>
+                    <button type="button" className="cta ghost compact" onClick={() => setActiveView('games')}>
+                      <WandSparkles size={14} />
+                      Explore all
+                    </button>
+                  </div>
+
+                  {forYouRecommendations.length === 0 ? (
+                    <div className="empty-state compact">
+                      <p>We’ll personalize this after you purchase or save a few games.</p>
+                    </div>
+                  ) : (
+                    <div className="card-grid">
+                      {forYouRecommendations.map(renderRecommendationCard)}
+                    </div>
+                  )}
+                </section>
+
+                <section>
+                  <div className="section-heading compact">
+                    <div>
+                      <span className="eyebrow">Trending</span>
+                      <h2>Popular right now</h2>
+                    </div>
+                    <span className="pill static">
+                      <Flame size={12} /> Hot
+                    </span>
+                  </div>
+
+                  {popularRecommendations.length === 0 ? (
+                    <div className="empty-state compact">
+                      <p>No popular games loaded yet.</p>
+                    </div>
+                  ) : (
+                    <div className="card-grid">
+                      {popularRecommendations.map(renderRecommendationCard)}
+                    </div>
+                  )}
+                </section>
+
+                <section>
+                  <div className="section-heading compact">
+                    <div>
+                      <span className="eyebrow">Similar</span>
+                      <h2>More like what you opened</h2>
+                    </div>
+                  </div>
+
+                  {selectedGameId ? (
+                    similarRecommendations.length === 0 ? (
+                      <div className="empty-state compact">
+                        <p>Open a game to fill this rail with similar picks.</p>
+                      </div>
+                    ) : (
+                      <div className="card-grid">
+                        {similarRecommendations.map(renderRecommendationCard)}
+                      </div>
+                    )
+                  ) : (
+                    <div className="empty-state compact">
+                      <p>Select any game to build a similarity rail.</p>
+                    </div>
+                  )}
+                </section>
               </div>
             </section>
           )}
