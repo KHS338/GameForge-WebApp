@@ -776,12 +776,21 @@ iframe {
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow);
   backdrop-filter: blur(18px);
+  padding: 14px;
 }
 
 .panel-inner {
   background: rgba(7, 15, 28, 0.4);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: calc(var(--radius-xl) - 8px);
+  padding: 14px;
+}
+
+/* Ensure inputs inside panels have breathing room from container edges */
+.panel input,
+.panel textarea,
+.panel select {
+  margin: 8px 0;
 }
 
 .topbar {

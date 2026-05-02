@@ -282,24 +282,23 @@ router.patch('/:id', verifyToken, async (req: AuthRequest, res) => {
     }
 
     const { title, genre, studio, description, price, featured, rating, tags, discountPercent, media } = req.body;
-    const updateData: any = {};
 
-    if (title !== undefined) updateData.title = title;
-    if (genre !== undefined) updateData.genre = genre;
-    if (studio !== undefined) updateData.studio = studio;
-    if (description !== undefined) updateData.description = description;
-    if (price !== undefined) updateData.price = price;
-    if (featured !== undefined) updateData.featured = featured;
-    if (rating !== undefined) updateData.rating = rating;
-    if (discountPercent !== undefined) updateData.discountPercent = Number(discountPercent);
-    if (media !== undefined) updateData.media = media;
+    if (title !== undefined) game.title = title;
+    if (genre !== undefined) game.genre = genre;
+    if (studio !== undefined) game.studio = studio;
+    if (description !== undefined) game.description = description;
+    if (price !== undefined) game.price = price;
+    if (featured !== undefined) game.featured = featured;
+    if (rating !== undefined) game.rating = rating;
+    if (discountPercent !== undefined) game.discountPercent = Number(discountPercent);
+    if (media !== undefined) game.media = media;
     if (tags !== undefined) {
-      updateData.tags = Array.isArray(tags) ? tags : typeof tags === 'string' ? tags.split(',').map((tag: string) => tag.trim()).filter(Boolean) : [];
+      game.tags = Array.isArray(tags) ? tags : typeof tags === 'string' ? tags.split(',').map((tag: string) => tag.trim()).filter(Boolean) : [];
     }
 
-    const updatedGame = await Game.findByIdAndUpdate(req.params.id, updateData, {
-      new: true,
-    }).populate('sellerId', 'username');
+    await game.save();
+
+    const updatedGame = await Game.findById(req.params.id).populate('sellerId', 'username');
 
     res.json(updatedGame);
   } catch (error) {

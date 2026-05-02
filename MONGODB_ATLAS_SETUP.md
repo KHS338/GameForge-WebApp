@@ -113,3 +113,19 @@ Once your connection works:
 - Your backend will automatically create collections when data is inserted
 - You can view data in MongoDB Atlas under the **Collections** tab
 - Ready to deploy your app!
+
+## Vector Search Setup
+
+To enable AI recommendations with MongoDB Atlas Vector Search:
+
+1. Go to your Atlas cluster and open **Search**.
+2. Create a new Search Index for the `games` collection.
+3. Use the vector field name `game_vector`.
+4. Configure the field as a `vector` type with `384` dimensions and `cosine` similarity.
+5. Name the index `game_vector_index` to match the backend service.
+
+### Recommended Fallback Strategy
+
+- **Cold start**: rank published games by `featured`, `rating`, `downloads`, `revenue`, and recency.
+- **User interest vector**: average the `game_vector` values from the games a user has purchased, then normalize the result before querying.
+- **No history**: return popular games until the user has enough purchases to build a stable profile vector.
