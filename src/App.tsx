@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState, useRef, type FormEvent } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
   Bell,
+  Compass,
+  Flame,
   Gamepad2,
   LogOut,
   Menu,
@@ -14,14 +16,16 @@ import {
   Trash2,
   ArrowLeft,
   DollarSign,
+  WandSparkles,
   BellOff,
 } from 'lucide-react';
-import { authApi, clearToken, gamesApi, transactionsApi, adminApi, getToken, type ApiGame, type ApiUser, type CreateGamePayload, type ApiTransaction } from './api';
+import { authApi, blogsApi, clearToken, gamesApi, transactionsApi, adminApi, getToken, recommendationsApi, type ApiGame, type ApiUser, type CreateGamePayload, type ApiTransaction, type ApiRecommendedGame, type ApiBlogPost } from './api';
 import { genreOptions } from './data';
 import { login, logout, type RootState, type UserProfile } from './store';
+import { ForumPage } from './components/ForumPage';
 
 type AuthMode = 'login' | 'signup' | 'admin-login';
-type ViewKey = 'home' | 'games' | 'sell' | 'profile' | 'cart' | 'payment' | 'detail' | 'library' | 'sales' | 'admin';
+type ViewKey = 'home' | 'discover' | 'blog' | 'games' | 'sell' | 'profile' | 'cart' | 'payment' | 'detail' | 'library' | 'sales' | 'admin' | 'forums';
 
 type Role = 'buyer' | 'seller' | 'admin';
 
@@ -46,9 +50,9 @@ const emptyGameForm = {
 
 const discountOptions = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 
-const buyerViews: ViewKey[] = ['home', 'games', 'library', 'cart', 'profile'];
-const sellerViews: ViewKey[] = ['home', 'sell', 'sales', 'profile'];
-const adminViews: ViewKey[] = ['home', 'admin', 'profile'];
+const buyerViews: ViewKey[] = ['home', 'discover', 'blog', 'games', 'forums', 'library', 'cart', 'profile'];
+const sellerViews: ViewKey[] = ['home', 'discover', 'blog', 'sell', 'forums', 'sales', 'profile'];
+const adminViews: ViewKey[] = ['home', 'discover', 'blog', 'forums', 'admin', 'profile'];
 
 function initials(value: string) {
   const parts = value.trim().split(/\s+/).filter(Boolean);
@@ -148,6 +152,12 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGenre, setSelectedGenre] = useState<string>('All');
   const [availableTags, setAvailableTags] = useState<string[]>([]);
+  const [popularRecommendations, setPopularRecommendations] = useState<ApiRecommendedGame[]>([]);
+  const [forYouRecommendations, setForYouRecommendations] = useState<ApiRecommendedGame[]>([]);
+  const [similarRecommendations, setSimilarRecommendations] = useState<ApiRecommendedGame[]>([]);
+  const [homeFeaturedGames, setHomeFeaturedGames] = useState<ApiRecommendedGame[]>([]);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
   const [cartIds, setCartIds] = useState<string[]>([]);
   const [checkoutMessage, setCheckoutMessage] = useState<string | null>(null);
   const [gameMessage, setGameMessage] = useState<string | null>(null);
@@ -158,6 +168,7 @@ function App() {
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [gameForm, setGameForm] = useState(emptyGameForm);
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
+  const [forumGameId, setForumGameId] = useState<string | null>(null);
   const [gameEditForm, setGameEditForm] = useState({
     title: '',
     genre: 'Action',
@@ -200,6 +211,19 @@ function App() {
   const [topUpAmount, setTopUpAmount] = useState('');
   const [topUpMessage, setTopUpMessage] = useState<string | null>(null);
 
+  const [blogPosts, setBlogPosts] = useState<ApiBlogPost[]>([]);
+  const [blogLoading, setBlogLoading] = useState(false);
+  const [blogError, setBlogError] = useState<string | null>(null);
+  const [blogMessage, setBlogMessage] = useState<string | null>(null);
+  const [editingBlogId, setEditingBlogId] = useState<string | null>(null);
+  const [isBlogComposerOpen, setIsBlogComposerOpen] = useState(false);
+  const [blogForm, setBlogForm] = useState({
+    title: '',
+    summary: '',
+    content: '',
+    tags: '',
+    published: true,
+  });
   // Review State
   const [reviewForm, setReviewForm] = useState({ rating: 5, comment: '' });
   const [reviewMessage, setReviewMessage] = useState<string | null>(null);
@@ -583,10 +607,91 @@ function App() {
   }, [games, selectedGameId]);
 
   useEffect(() => {
-    if (activeView === 'detail' && !selectedGame && games.length > 0) {
+    if ((activeView === 'detail' || activeView === 'forums') && !selectedGame && games.length > 0) {
       setSelectedGameId(games[0]._id);
     }
   }, [activeView, games, selectedGame]);
+
+  useEffect(() => {
+    if (!session.isAuthenticated) {
+      return;
+    }
+
+    let mounted = true;
+
+    async function loadRecommendations() {
+      setRecommendationsLoading(true);
+      setRecommendationsError(null);
+
+      try {
+        const [homeFeatured, popular, forYou, similar] = await Promise.all([
+          recommendationsApi.getHomeFeatured().catch(() => [] as ApiRecommendedGame[]),
+          recommendationsApi.getPopular(),
+          recommendationsApi.getForYou().catch(() => [] as ApiRecommendedGame[]),
+          selectedGameId ? recommendationsApi.getSimilar(selectedGameId).catch(() => [] as ApiRecommendedGame[]) : Promise.resolve([] as ApiRecommendedGame[]),
+        ]);
+
+        if (!mounted) {
+          return;
+        }
+
+        setHomeFeaturedGames(homeFeatured);
+        setPopularRecommendations(popular);
+        setForYouRecommendations(forYou);
+        setSimilarRecommendations(similar);
+      } catch (error) {
+        if (mounted) {
+          setRecommendationsError(error instanceof Error ? error.message : 'Could not load recommendations');
+        }
+      } finally {
+        if (mounted) {
+          setRecommendationsLoading(false);
+        }
+      }
+    }
+
+    void loadRecommendations();
+
+    return () => {
+      mounted = false;
+    };
+  }, [session.isAuthenticated, selectedGameId]);
+
+  useEffect(() => {
+    if (!session.isAuthenticated || activeView !== 'blog') {
+      return;
+    }
+
+    let mounted = true;
+
+    async function loadBlogs() {
+      setBlogLoading(true);
+      setBlogError(null);
+
+      try {
+        const posts = await blogsApi.getAll({ includeAll: role === 'admin' });
+        if (!mounted) {
+          return;
+        }
+
+        setBlogPosts(posts);
+      } catch (error) {
+        if (mounted) {
+          setBlogError(error instanceof Error ? error.message : 'Could not load blog posts');
+        }
+      } finally {
+        if (mounted) {
+          setBlogLoading(false);
+        }
+      }
+    }
+
+    void loadBlogs();
+
+    return () => {
+      mounted = false;
+    };
+  }, [activeView, role, session.isAuthenticated]);
 
   useEffect(() => {
     if (selectedGame) {
@@ -627,7 +732,8 @@ function App() {
           throw new Error('All fields are required');
         }
 
-        const result = await authApi.register(authForm.email.trim(), authForm.name.trim(), authForm.password, authForm.role);
+        const signupRole: 'buyer' | 'seller' = authForm.role === 'seller' ? 'seller' : 'buyer';
+        const result = await authApi.register(authForm.email.trim(), authForm.name.trim(), authForm.password, signupRole);
         dispatch(login(mapUser(result.user)));
       } else if (authMode === 'admin-login') {
         if (!authForm.name.trim()) {
@@ -684,6 +790,16 @@ function App() {
   const openGameDetail = (gameId: string) => {
     setSelectedGameId(gameId);
     setActiveView('detail');
+  };
+
+  const openGameForums = (gameId?: string) => {
+    setForumGameId(gameId ?? null);
+    setActiveView('forums');
+  };
+
+  const openForumsHub = () => {
+    setForumGameId(null);
+    setActiveView('forums');
   };
 
   const goBackFromDetail = () => {
@@ -949,6 +1065,144 @@ function App() {
     }
   };
 
+  const reloadBlogs = async () => {
+    try {
+      const posts = await blogsApi.getAll({ includeAll: role === 'admin' });
+      setBlogPosts(posts);
+    } catch (error) {
+      setBlogError(error instanceof Error ? error.message : 'Could not load blog posts');
+    }
+  };
+
+  const handleBlogSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (role !== 'admin') {
+      return;
+    }
+
+    if (!blogForm.title.trim() || !blogForm.content.trim()) {
+      setBlogMessage('Title and content are required.');
+      return;
+    }
+
+    const payload = {
+      title: blogForm.title.trim(),
+      summary: blogForm.summary.trim(),
+      content: blogForm.content,
+      tags: blogForm.tags
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+      published: blogForm.published,
+    };
+
+    try {
+      if (editingBlogId) {
+        await blogsApi.update(editingBlogId, payload);
+        setBlogMessage('Blog post updated.');
+      } else {
+        await blogsApi.create(payload);
+        setBlogMessage('Blog post created.');
+      }
+
+      setEditingBlogId(null);
+      setIsBlogComposerOpen(false);
+      setBlogForm({ title: '', summary: '', content: '', tags: '', published: true });
+      await reloadBlogs();
+    } catch (error) {
+      setBlogMessage(error instanceof Error ? error.message : 'Could not save blog post');
+    }
+  };
+
+  const handleEditBlog = (post: ApiBlogPost) => {
+    setEditingBlogId(post._id);
+    setIsBlogComposerOpen(true);
+    setBlogForm({
+      title: post.title,
+      summary: post.summary ?? '',
+      content: post.content,
+      tags: Array.isArray(post.tags) ? post.tags.join(', ') : '',
+      published: post.published,
+    });
+    setBlogMessage(null);
+  };
+
+  const handleDeleteBlog = async (postId: string) => {
+    if (role !== 'admin') {
+      return;
+    }
+
+    try {
+      await blogsApi.delete(postId);
+      setBlogMessage('Blog post deleted.');
+      if (editingBlogId === postId) {
+        setEditingBlogId(null);
+        setIsBlogComposerOpen(false);
+        setBlogForm({ title: '', summary: '', content: '', tags: '', published: true });
+      }
+      await reloadBlogs();
+    } catch (error) {
+      setBlogMessage(error instanceof Error ? error.message : 'Could not delete blog post');
+    }
+  };
+
+  const openBlogComposer = () => {
+    setEditingBlogId(null);
+    setBlogForm({ title: '', summary: '', content: '', tags: '', published: true });
+    setBlogMessage(null);
+    setIsBlogComposerOpen(true);
+  };
+
+  const closeBlogComposer = () => {
+    setIsBlogComposerOpen(false);
+    setEditingBlogId(null);
+    setBlogForm({ title: '', summary: '', content: '', tags: '', published: true });
+  };
+
+  const renderRecommendationCard = (game: ApiRecommendedGame) => {
+    const cover = game.media?.cover?.trim() ? game.media.cover : buildPlaceholderCover(game.title);
+    const score = typeof game.score === 'number' ? game.score : null;
+
+    return (
+      <article
+        key={game._id}
+        className="game-card clickable"
+        role="button"
+        tabIndex={0}
+        onClick={() => openGameDetail(game._id)}
+      >
+        <img className="game-card-image" src={cover} alt={game.title} />
+        <div className="game-card-top">
+          <span className="genre-tag">{game.genre}</span>
+          {game.featured && <span className="featured-tag">Featured</span>}
+        </div>
+        <h3>{game.title}</h3>
+        <p>{game.description}</p>
+        <div className="tag-row compact">
+          {(game.tags?.length ? game.tags : [game.genre]).slice(0, 3).map((tag) => (
+            <span key={`${game._id}-${tag}`} className="pill static">
+              {tag}
+            </span>
+          ))}
+        </div>
+        <div className="game-card-meta">
+          <span>{game.studio}</span>
+          <strong>${getDiscountedPrice(game).toFixed(2)}</strong>
+        </div>
+        <div className="price-stack compact">
+          <span>${game.price.toFixed(2)} · {getDiscountPercent(game)}% off</span>
+        </div>
+        <div className="game-card-footer">
+          <span>
+            <Star size={14} /> {game.rating.toFixed(1)}
+          </span>
+          <span>{score !== null ? `Score ${score.toFixed(2)}` : 'Recommended'}</span>
+        </div>
+      </article>
+    );
+  };
+
   if (booting) {
     return (
       <div className="auth-screen">
@@ -1171,14 +1425,21 @@ function App() {
                 type="button"
                 className={activeView === item ? 'nav-item active' : 'nav-item'}
                 onClick={() => {
-                  setActiveView(item);
+                  if (item === 'forums') {
+                    openForumsHub();
+                  } else {
+                    setActiveView(item);
+                  }
                   setMobileMenuOpen(false);
                 }}
               >
                 <span>{item}</span>
                 <small>
                   {item === 'home' ? 'Main dashboard' : 
+                   item === 'discover' ? 'Curated picks' : 
+                   item === 'blog' ? 'Platform updates' : 
                    item === 'games' ? 'Browse and buy' : 
+                   item === 'forums' ? 'Game discussions' : 
                    item === 'sell' ? 'Create listings' : 
                    item === 'admin' ? 'Platform logs' : 
                    item === 'profile' ? 'Account settings' : 
@@ -1275,6 +1536,10 @@ function App() {
                       Add listing
                     </button>
                   )}
+                  <button type="button" className="cta ghost" onClick={() => setActiveView('discover')}>
+                    <Compass size={16} />
+                    Discover games
+                  </button>
                 </div>
               </div>
 
@@ -1310,8 +1575,8 @@ function App() {
                 </div>
               </div>
 
-              {gamesLoading && <p className="auth-message">Loading featured games...</p>}
-              {!gamesLoading && featuredGames.length === 0 && (
+              {recommendationsLoading && <p className="auth-message">Loading featured games...</p>}
+              {!recommendationsLoading && homeFeaturedGames.length === 0 && (
                 <div className="empty-state">
                   <p>No featured games yet.</p>
                 </div>
@@ -1344,6 +1609,241 @@ function App() {
                   );
                 })}
               </div>
+            </section>
+          )}
+
+          {activeView === 'discover' && (
+            <section className="panel">
+              <div className="section-heading">
+                <div>
+                  <span className="eyebrow">Discover</span>
+                  <h2>Curated discovery hub</h2>
+                </div>
+              </div>
+
+              {recommendationsLoading && <p className="auth-message">Loading recommendation feed...</p>}
+              {recommendationsError && <p className="auth-message error">{recommendationsError}</p>}
+
+              <div style={{ display: 'grid', gap: '24px' }}>
+                <section>
+                  <div className="section-heading compact">
+                    <div>
+                      <span className="eyebrow">For you</span>
+                      <h2>Personalized picks</h2>
+                    </div>
+                    <button type="button" className="cta ghost compact" onClick={() => setActiveView('games')}>
+                      <WandSparkles size={14} />
+                      Explore all
+                    </button>
+                  </div>
+
+                  {forYouRecommendations.length === 0 ? (
+                    <div className="empty-state compact">
+                      <p>We’ll personalize this after you purchase or save a few games.</p>
+                    </div>
+                  ) : (
+                    <div className="card-grid">
+                      {forYouRecommendations.map(renderRecommendationCard)}
+                    </div>
+                  )}
+                </section>
+
+                <section>
+                  <div className="section-heading compact">
+                    <div>
+                      <span className="eyebrow">Trending</span>
+                      <h2>Popular right now</h2>
+                    </div>
+                    <span className="pill static">
+                      <Flame size={12} /> Hot
+                    </span>
+                  </div>
+
+                  {popularRecommendations.length === 0 ? (
+                    <div className="empty-state compact">
+                      <p>No popular games loaded yet.</p>
+                    </div>
+                  ) : (
+                    <div className="card-grid">
+                      {popularRecommendations.map(renderRecommendationCard)}
+                    </div>
+                  )}
+                </section>
+
+                <section>
+                  <div className="section-heading compact">
+                    <div>
+                      <span className="eyebrow">Similar</span>
+                      <h2>More like what you opened</h2>
+                    </div>
+                  </div>
+
+                  {selectedGameId ? (
+                    similarRecommendations.length === 0 ? (
+                      <div className="empty-state compact">
+                        <p>Open a game to fill this rail with similar picks.</p>
+                      </div>
+                    ) : (
+                      <div className="card-grid">
+                        {similarRecommendations.map(renderRecommendationCard)}
+                      </div>
+                    )
+                  ) : (
+                    <div className="empty-state compact">
+                      <p>Select any game to build a similarity rail.</p>
+                    </div>
+                  )}
+                </section>
+              </div>
+            </section>
+          )}
+
+          {activeView === 'blog' && (
+            <section className="two-column">
+              <article className="panel" style={{ gridColumn: '1 / -1' }}>
+                <div className="section-heading">
+                  <div>
+                    <span className="eyebrow">GameForge blog</span>
+                    <h2>Updates, changes, and insights</h2>
+                  </div>
+                  {role === 'admin' && (
+                    <button type="button" className="cta primary compact" onClick={openBlogComposer}>
+                      <PlusCircle size={14} />
+                      Create New Blog Post
+                    </button>
+                  )}
+                </div>
+
+                {blogLoading && <p className="auth-message">Loading blog posts...</p>}
+                {blogError && <p className="auth-message error">{blogError}</p>}
+                {blogMessage && <p className="auth-message">{blogMessage}</p>}
+
+                {!blogLoading && blogPosts.length === 0 && (
+                  <div className="empty-state">
+                    <p>No blog posts yet.</p>
+                  </div>
+                )}
+
+                <div style={{ display: 'grid', gap: '16px' }}>
+                  {blogPosts.map((post) => {
+                    const author = typeof post.createdBy === 'string' ? 'Admin' : post.createdBy.username;
+                    const updatedBy = typeof post.updatedBy === 'string' ? 'Admin' : post.updatedBy?.username;
+
+                    return (
+                      <article key={post._id} className="game-card" style={{ cursor: 'default' }}>
+                        <div className="game-card-top">
+                          <span className="genre-tag">{post.published ? 'Published' : 'Draft'}</span>
+                          <span className="pill static">{new Date(post.publishedAt ?? post.createdAt).toLocaleDateString()}</span>
+                        </div>
+                        <h3>{post.title}</h3>
+                        {post.summary && <p>{post.summary}</p>}
+                        <div className="tag-row compact">
+                          {(post.tags?.length ? post.tags : ['update']).slice(0, 5).map((tag) => (
+                            <span key={`${post._id}-${tag}`} className="pill static">{tag}</span>
+                          ))}
+                        </div>
+                        <div style={{ marginTop: '8px', color: 'var(--muted)', whiteSpace: 'pre-wrap' }}>
+                          {post.content}
+                        </div>
+                        <div className="game-card-footer" style={{ marginTop: '12px' }}>
+                          <span>By {author}</span>
+                          <span>{updatedBy ? `Updated by ${updatedBy}` : 'Original post'}</span>
+                        </div>
+                        {role === 'admin' && (
+                          <div className="hero-actions" style={{ marginTop: '10px', gap: '8px' }}>
+                            <button type="button" className="cta ghost compact" onClick={() => handleEditBlog(post)}>
+                              Edit
+                            </button>
+                            <button type="button" className="cta ghost compact" onClick={() => handleDeleteBlog(post._id)}>
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
+              </article>
+
+              {role === 'admin' && isBlogComposerOpen && (
+                <div className="blog-composer-overlay" role="presentation" onClick={closeBlogComposer}>
+                  <article className="panel blog-composer" onClick={(event) => event.stopPropagation()}>
+                    <div className="section-heading compact">
+                      <div>
+                        <span className="eyebrow">Admin editor</span>
+                        <h2>{editingBlogId ? 'Edit post' : 'Create post'}</h2>
+                      </div>
+                      <button type="button" className="icon-button" onClick={closeBlogComposer} aria-label="Close composer">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+
+                    <form className="auth-form" onSubmit={handleBlogSubmit}>
+                      <label>
+                        <span>Title</span>
+                        <input
+                          value={blogForm.title}
+                          onChange={(event) => setBlogForm((current) => ({ ...current, title: event.target.value }))}
+                          placeholder="Post title"
+                        />
+                      </label>
+                      <label>
+                        <span>Summary</span>
+                        <input
+                          value={blogForm.summary}
+                          onChange={(event) => setBlogForm((current) => ({ ...current, summary: event.target.value }))}
+                          placeholder="Short summary"
+                        />
+                      </label>
+                      <label>
+                        <span>Tags (comma separated)</span>
+                        <input
+                          value={blogForm.tags}
+                          onChange={(event) => setBlogForm((current) => ({ ...current, tags: event.target.value }))}
+                          placeholder="update, patch, insight"
+                        />
+                      </label>
+                      <label>
+                        <span>Content</span>
+                        <textarea
+                          value={blogForm.content}
+                          onChange={(event) => setBlogForm((current) => ({ ...current, content: event.target.value }))}
+                          placeholder="Write site changes, updates, and insights"
+                          rows={10}
+                        />
+                      </label>
+                      <label className="inline-toggle" style={{ marginTop: '8px' }}>
+                        <input
+                          type="checkbox"
+                          checked={blogForm.published}
+                          onChange={(event) => setBlogForm((current) => ({ ...current, published: event.target.checked }))}
+                        />
+                        <span className="switch" />
+                        <span className="toggle-label">Published</span>
+                      </label>
+
+                      <div className="hero-actions" style={{ marginTop: '8px', gap: '8px' }}>
+                        <button type="submit" className="cta primary small">
+                          {editingBlogId ? 'Update post' : 'Publish post'}
+                        </button>
+                        {editingBlogId && (
+                          <button
+                            type="button"
+                            className="cta ghost small"
+                            onClick={() => {
+                              setEditingBlogId(null);
+                              setBlogForm({ title: '', summary: '', content: '', tags: '', published: true });
+                              setBlogMessage(null);
+                            }}
+                          >
+                            Cancel edit
+                          </button>
+                        )}
+                      </div>
+                    </form>
+                  </article>
+                </div>
+              )}
             </section>
           )}
 
@@ -1425,6 +1925,10 @@ function App() {
                         <p style={{ margin: '4px 0 0 0', color: 'var(--accent)', fontSize: '0.9rem' }}>{getFeatureExpiryDate(selectedGame)}</p>
                       </div>
                     )}
+
+                    <button type="button" className="cta ghost" onClick={() => openGameForums(selectedGame._id)}>
+                      Game forums
+                    </button>
 
                   </div>
                 </div>
@@ -1720,6 +2224,15 @@ function App() {
                   </form>
                 </article>
               )}
+            </section>
+          )}
+
+          {activeView === 'forums' && (
+            <section className="forum-page-layout">
+              <ForumPage
+                games={games.map((game) => ({ _id: game._id, title: game.title }))}
+                initialGameId={forumGameId}
+              />
             </section>
           )}
 
@@ -2591,8 +3104,8 @@ function App() {
                             <td style={{ padding: '14px 16px' }}>
                               {tx.sellerId ? (
                                 <div>
-                                  <span style={{ display: 'block' }}>{tx.sellerId.username}</span>
-                                  <code style={{ fontSize: '0.65rem', color: 'var(--muted)' }}>{tx.sellerId._id}</code>
+                                  <span style={{ display: 'block' }}>{typeof tx.sellerId === 'string' ? tx.sellerId : tx.sellerId.username}</span>
+                                  <code style={{ fontSize: '0.65rem', color: 'var(--muted)' }}>{typeof tx.sellerId === 'string' ? tx.sellerId : tx.sellerId._id}</code>
                                 </div>
                               ) : <span style={{ color: 'var(--muted)' }}>N/A</span>}
                             </td>

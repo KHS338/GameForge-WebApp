@@ -37,6 +37,7 @@ body {
     radial-gradient(circle at right, rgba(255, 179, 71, 0.16), transparent 26%),
     linear-gradient(180deg, #06101e 0%, #09182c 52%, #050b14 100%);
   color: var(--text);
+  overflow-x: hidden;
 }
 
 button,
@@ -66,8 +67,8 @@ iframe {
 
 .app-shell {
   position: relative;
-  width: min(1440px, calc(100vw - 32px));
-  margin: 0 auto;
+  width: auto;
+  margin-inline: clamp(50px, 8vw, 150px);
   padding: 22px 0 30px;
 }
 
@@ -326,6 +327,377 @@ iframe {
   min-height: 420px;
 }
 
+.forum-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.forum-controls {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.forum-controls input,
+.forum-controls select,
+.forum-create-topic input,
+.forum-create-topic textarea,
+.forum-create-comment textarea,
+.forum-reply-box textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(7, 16, 31, 0.64);
+  color: var(--text);
+  padding: 10px 12px;
+}
+
+.forum-create-topic,
+.forum-create-comment,
+.forum-reply-box {
+  display: grid;
+  gap: 10px;
+}
+
+.forum-topics-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 340px) minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+}
+
+.forum-topics-list {
+  display: grid;
+  gap: 8px;
+  max-height: 720px;
+  overflow-y: auto;
+}
+
+.forum-topic-item {
+  text-align: left;
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  padding: 10px;
+}
+
+.forum-topic-item.expanded {
+  gap: 12px;
+  padding: 14px;
+  border-color: rgba(34, 199, 168, 0.35);
+  background: rgba(34, 199, 168, 0.06);
+}
+
+.forum-topic-item p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.forum-topic-item strong {
+  overflow-wrap: anywhere;
+}
+
+.forum-topic-item.active {
+  border-color: rgba(34, 199, 168, 0.45);
+  box-shadow: 0 10px 30px rgba(34, 199, 168, 0.14);
+}
+
+.forum-topic-meta {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.forum-topic-preview {
+  display: grid;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.forum-topic-preview .preview {
+  max-height: 120px;
+  overflow: hidden;
+  position: relative;
+}
+
+.forum-topic-preview .preview::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 36px;
+  background: linear-gradient(180deg, rgba(7, 17, 31, 0), rgba(7, 17, 31, 0.94));
+}
+
+.forum-topic-expanded-hint {
+  font-size: 0.75rem;
+  color: var(--accent-strong);
+  opacity: 0.9;
+}
+
+.forum-comments-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(34, 199, 168, 0.4);
+  background: rgba(34, 199, 168, 0.14);
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.forum-thread-view {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.forum-thread-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.forum-thread-header h3 {
+  margin: 0;
+}
+
+.forum-thread-header p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.forum-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.forum-actions.wrap {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.forum-markdown {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  line-height: 1.62;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.forum-markdown :is(h1, h2, h3, h4) {
+  margin: 0 0 8px;
+}
+
+.forum-markdown p {
+  margin: 0 0 10px;
+}
+
+.forum-markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.forum-markdown pre {
+  overflow-x: auto;
+  max-width: 100%;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(6, 16, 31, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.forum-markdown img,
+.forum-markdown iframe,
+.forum-markdown video,
+.forum-markdown table {
+  max-width: 100%;
+}
+
+.forum-markdown img,
+.forum-markdown iframe,
+.forum-markdown video {
+  height: auto;
+}
+
+.forum-markdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+}
+
+.forum-comments-list {
+  display: grid;
+  gap: 10px;
+}
+
+.forum-comment {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.forum-comment-header {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.forum-comment-header span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.forum-muted {
+  color: var(--muted);
+  opacity: 0.85;
+}
+
+.forum-comments-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.forum-children {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.forum-create-comment textarea,
+.forum-reply-box textarea {
+  height: 120px;
+  min-height: 120px;
+  max-height: 120px;
+  resize: none;
+  overflow-y: auto;
+}
+
+.report-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(3, 8, 18, 0.78);
+  backdrop-filter: blur(5px);
+}
+
+.report-dialog {
+  width: min(560px, calc(100vw - 36px));
+  border-radius: 16px;
+  border: 1px solid rgba(164, 198, 255, 0.2);
+  background: rgba(10, 20, 39, 0.96);
+  box-shadow: 0 22px 80px rgba(0, 0, 0, 0.48);
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.report-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.report-dialog-header h3 {
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.report-dialog-target {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 9px 11px;
+  overflow-wrap: anywhere;
+}
+
+.report-dialog-form {
+  display: grid;
+  gap: 12px;
+}
+
+.report-dialog-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.report-dialog-form span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.report-dialog-form select,
+.report-dialog-form textarea {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(7, 16, 31, 0.64);
+  color: var(--text);
+  padding: 10px 12px;
+}
+
+.report-dialog-form textarea {
+  min-height: 120px;
+  max-height: 220px;
+  resize: vertical;
+}
+
+.report-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .report-dialog {
+    width: calc(100vw - 22px);
+  }
+
+  .report-dialog-actions {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 1024px) {
+  .forum-topics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .forum-topics-list {
+    max-height: 320px;
+  }
+}
+
 .featured-slide img {
   width: 100%;
   aspect-ratio: 3 / 4;
@@ -404,12 +776,47 @@ iframe {
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow);
   backdrop-filter: blur(18px);
+  padding: 14px;
 }
 
 .panel-inner {
   background: rgba(7, 15, 28, 0.4);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: calc(var(--radius-xl) - 8px);
+  padding: 14px;
+}
+
+.blog-composer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(3, 8, 16, 0.66);
+  backdrop-filter: blur(12px);
+}
+
+.blog-composer {
+  width: min(780px, calc(100vw - 48px));
+  max-height: min(86vh, 900px);
+  overflow: auto;
+  box-shadow: 0 32px 110px rgba(0, 0, 0, 0.52);
+}
+
+.blog-composer .auth-form {
+  gap: 12px;
+}
+
+.blog-composer .auth-form textarea {
+  min-height: 220px;
+}
+
+/* Ensure inputs inside panels have breathing room from container edges */
+.panel input,
+.panel textarea,
+.panel select {
+  margin: 8px 0;
 }
 
 .topbar {
@@ -1723,6 +2130,7 @@ iframe {
 @media (max-width: 860px) {
   .app-shell {
     width: min(100vw - 18px, 1440px);
+    margin-inline: auto;
     padding-top: 10px;
   }
 

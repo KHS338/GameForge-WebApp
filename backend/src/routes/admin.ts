@@ -84,4 +84,26 @@ router.get('/users', verifyToken, requireAdmin, async (_req: AuthRequest, res) =
   }
 });
 
+router.post('/users/:id/topup', verifyToken, requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const amount = Number(req.body?.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ message: 'Top-up amount must be a positive number' });
+    }
+
+    const user = await User.findById(req.params.id).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    user.walletBalance = Number(((user.walletBalance ?? 0) + amount).toFixed(2));
+    await user.save();
+
+    res.json({ message: `Wallet topped up by $${amount.toFixed(2)}`, user });
+  } catch (error) {
+    console.error('✗ Error topping up user wallet:', error);
+    res.status(500).json({ message: 'Error topping up user wallet', error });
+  }
+});
+
 export default router;

@@ -6,6 +6,9 @@ import gamesRouter from './routes/games.js';
 import authRouter from './routes/auth.js';
 import transactionsRouter from './routes/transactions.js';
 import adminRouter from './routes/admin.js';
+import forumsRouter from './routes/forums.js';
+import recommendationsRouter from './routes/recommendations.js';
+import blogsRouter from './routes/blogs.js';
 import { User } from './models/User.js';
 
 dotenv.config();
@@ -29,6 +32,9 @@ app.use('/api/games', gamesRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/transactions', transactionsRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/forums', forumsRouter);
+app.use('/api/recommendations', recommendationsRouter);
+app.use('/api/blogs', blogsRouter);
 
 // 404 handler
 app.use((_req, res) => {
