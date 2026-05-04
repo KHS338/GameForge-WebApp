@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, useRef, type FormEvent } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
   Bell,
@@ -17,6 +17,7 @@ import {
   ArrowLeft,
   DollarSign,
   WandSparkles,
+  BellOff,
 } from 'lucide-react';
 import { authApi, blogsApi, clearToken, gamesApi, transactionsApi, adminApi, getToken, recommendationsApi, type ApiGame, type ApiUser, type CreateGamePayload, type ApiTransaction, type ApiRecommendedGame, type ApiBlogPost } from './api';
 import { genreOptions } from './data';
@@ -97,6 +98,16 @@ function mapUser(user: ApiUser): UserProfile {
     email: user.email,
     role: user.role === 'admin' ? 'admin' : user.role === 'seller' ? 'seller' : 'buyer',
     walletBalance: user.walletBalance ?? 0,
+    notificationsEnabled: user.notificationsEnabled ?? true,
+    notifications: (user.notifications ?? []).map((notification) => ({
+      id: notification._id,
+      title: notification.title,
+      detail: notification.detail,
+      tone: notification.tone,
+      category: notification.category,
+      read: notification.read,
+      createdAt: notification.createdAt,
+    })),
     city: '',
     bio: user.bio ?? '',
     avatar: user.avatar ?? initials(user.username),
@@ -213,8 +224,49 @@ function App() {
     tags: '',
     published: true,
   });
+  // Review State
+  const [reviewForm, setReviewForm] = useState({ rating: 5, comment: '' });
+  const [reviewMessage, setReviewMessage] = useState<string | null>(null);
+
+  const isAdminUser = (session.user?.role as string | undefined) === 'admin';
+  const platformWallet = useMemo(() => {
+    return adminTransactions.reduce((sum, tx) => {
+      if (tx.type === 'sale') return sum + (tx.platformCut || 0);
+      if (tx.type === 'feature_fee') return sum + (tx.totalPrice || Math.abs(tx.amount || 0));
+      return sum;
+    }, 0);
+  }, [adminTransactions]);
+
+  const featuredGames = useMemo(() => games.filter((game) => game.featured), [games]);
+
+  const featuredRef = useRef<HTMLDivElement | null>(null);
+  const [featuredIndex, setFeaturedIndex] = useState(0);
+
+  useEffect(() => {
+    if (featuredGames.length === 0) return;
+    const id = setInterval(() => {
+      setFeaturedIndex((i) => (i + 1) % featuredGames.length);
+    }, 5000);
+    return () => clearInterval(id);
+  }, [featuredGames.length]);
+
+  useEffect(() => {
+    const el = featuredRef.current;
+    if (!el || featuredGames.length === 0) return;
+    const child = el.children[featuredIndex] as HTMLElement | undefined;
+    if (child) {
+      try {
+        child.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+      } catch {
+        el.scrollTo({ left: Math.max(0, child.offsetLeft - 8), behavior: 'smooth' });
+      }
+    }
+  }, [featuredIndex, featuredGames.length]);
 
   const role = session.user?.role ?? 'buyer';
+  const notificationsEnabled = session.user?.notificationsEnabled ?? true;
+  const sidebarNotifications = session.user?.notifications ?? [];
+  const unreadNotificationCount = sidebarNotifications.filter((notification) => !notification.read).length;
   const navItems = role === 'admin' ? adminViews : (role === 'seller' ? sellerViews : buyerViews);
   const cartGames = useMemo(() => games.filter((game) => cartIds.includes(game._id)), [cartIds, games]);
   const cartTotal = useMemo(() => cartGames.reduce((sum, game) => sum + getDiscountedPrice(game), 0), [cartGames]);
@@ -380,6 +432,44 @@ function App() {
       return;
     }
 
+    const token = getToken();
+    if (!token) {
+      return;
+    }
+
+    let mounted = true;
+    const stream = new EventSource(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/auth/me/notifications/stream?token=${encodeURIComponent(token)}`);
+
+    const refreshCurrentUser = async () => {
+      try {
+        const currentUser = await authApi.getCurrentUser();
+        if (mounted) {
+          dispatch(login(mapUser(currentUser)));
+        }
+      } catch (error) {
+        console.error('Could not refresh current user:', error);
+      }
+    };
+
+    stream.addEventListener('notification', () => {
+      void refreshCurrentUser();
+    });
+
+    stream.onerror = () => {
+      // Browser will retry automatically; keep the UI on the last known state.
+    };
+
+    return () => {
+      mounted = false;
+      stream.close();
+    };
+  }, [dispatch, session.isAuthenticated]);
+
+  useEffect(() => {
+    if (!session.isAuthenticated) {
+      return;
+    }
+
     let mounted = true;
 
     async function loadGames() {
@@ -458,7 +548,7 @@ function App() {
   }, [activeView, role, transactionFilters]);
 
   useEffect(() => {
-    if (activeView !== 'admin' || role !== 'admin') {
+    if (role !== 'admin' || (activeView !== 'admin' && activeView !== 'home')) {
       return;
     }
 
@@ -679,6 +769,24 @@ function App() {
     setAuthForm(emptyAuthForm);
   };
 
+  const handleNotificationToggle = async (enabled: boolean) => {
+    try {
+      const updatedUser = await authApi.updateNotificationSettings(enabled);
+      dispatch(login(mapUser(updatedUser)));
+    } catch (error) {
+      console.error('Could not update notification settings:', error);
+    }
+  };
+
+  const handleNotificationRead = async (notificationId: string) => {
+    try {
+      const updatedUser = await authApi.markNotificationRead(notificationId);
+      dispatch(login(mapUser(updatedUser)));
+    } catch (error) {
+      console.error('Could not mark notification read:', error);
+    }
+  };
+
   const openGameDetail = (gameId: string) => {
     setSelectedGameId(gameId);
     setActiveView('detail');
@@ -885,6 +993,40 @@ function App() {
       setTimeout(() => setProfileMessage(null), 3000);
     } catch (error) {
       setProfileMessage(error instanceof Error ? error.message : 'Could not change password.');
+    }
+  };
+
+  const handleAddReview = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!selectedGame || reviewForm.rating < 1 || reviewForm.rating > 5 || !reviewForm.comment.trim()) return;
+    try {
+      const updatedGame = await gamesApi.addReview(selectedGame._id, reviewForm.rating, reviewForm.comment);
+      setGames(games.map(g => g._id === updatedGame._id ? updatedGame : g));
+      setReviewForm({ rating: 5, comment: '' });
+      setReviewMessage('Review added successfully!');
+      setTimeout(() => setReviewMessage(null), 3000);
+    } catch (error) {
+      setReviewMessage(error instanceof Error ? error.message : 'Could not add review.');
+    }
+  };
+
+  const handleLikeReview = async (reviewId: string) => {
+    if (!selectedGame) return;
+    try {
+      const updatedGame = await gamesApi.likeReview(selectedGame._id, reviewId);
+      setGames(games.map(g => g._id === updatedGame._id ? updatedGame : g));
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleDislikeReview = async (reviewId: string) => {
+    if (!selectedGame) return;
+    try {
+      const updatedGame = await gamesApi.dislikeReview(selectedGame._id, reviewId);
+      setGames(games.map(g => g._id === updatedGame._id ? updatedGame : g));
+    } catch (error) {
+      console.error(error);
     }
   };
 
@@ -1236,16 +1378,24 @@ function App() {
         )}
 
         <div className="topbar-actions">
-          <button type="button" className="icon-button" title="Notifications">
-            <Bell size={18} />
+          <button
+            type="button"
+            className={`icon-button ${!notificationsEnabled ? 'notifications-disabled' : ''}`}
+            title={notificationsEnabled ? 'Notifications on — click to toggle' : 'Notifications off — click to toggle'}
+            onClick={() => void handleNotificationToggle(!notificationsEnabled)}
+          >
+            {notificationsEnabled ? <Bell size={18} /> : <BellOff size={18} />}
+            {notificationsEnabled && unreadNotificationCount > 0 && (
+              <span className="topbar-badge">{unreadNotificationCount}</span>
+            )}
           </button>
           <div className="role-chip">
             <ShieldCheck size={14} />
             <span>{role}</span>
           </div>
           <div className="role-chip wallet-chip">
-            <span>Wallet</span>
-            <strong>${walletBalance.toFixed(2)}</strong>
+            <span>{isAdminUser ? 'Platform wallet' : 'Wallet'}</span>
+            <strong>${(isAdminUser ? platformWallet : walletBalance).toFixed(2)}</strong>
           </div>
           {role === 'buyer' && (
             <button type="button" className="cta ghost" onClick={() => setActiveView('cart')}>
@@ -1315,6 +1465,45 @@ function App() {
                   : 'You can browse games and buy.'}
             </p>
           </div>
+
+            <div className="sidebar-card notification-panel">
+              <div className="card-header compact notification-panel-header">
+                <div className="notification-panel-title">
+                  <Bell size={16} />
+                  <span>Notifications</span>
+                  {unreadNotificationCount > 0 && <strong className="notification-badge">{unreadNotificationCount}</strong>}
+                </div>
+                <label className="inline-toggle notification-toggle">
+                  <input
+                    type="checkbox"
+                    checked={notificationsEnabled}
+                    onChange={(event) => void handleNotificationToggle(event.target.checked)}
+                  />
+                  <span className="toggle-label">{notificationsEnabled ? 'On' : 'Off'}</span>
+                </label>
+              </div>
+
+              {sidebarNotifications.length === 0 ? (
+                <p className="muted-copy">No notifications yet.</p>
+              ) : (
+                <div className="notification-stack">
+                  {sidebarNotifications.slice(0, 5).map((notification) => (
+                    <button
+                      key={notification.id}
+                      type="button"
+                      className={`notification ${notification.tone} ${notification.read ? 'read' : 'unread'}`}
+                      onClick={() => void handleNotificationRead(notification.id)}
+                    >
+                      <div className="notification-copy">
+                        <strong>{notification.title}</strong>
+                        <span>{notification.detail}</span>
+                      </div>
+                      <small>{new Date(notification.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
         </aside>
 
         <main className="content">
@@ -1360,11 +1549,11 @@ function App() {
                   <strong>{role.charAt(0).toUpperCase() + role.slice(1)}</strong>
                   <p>{session.user?.email}</p>
                 </div>
-                {role === 'admin' ? (
+                {isAdminUser ? (
                   <div>
-                    <span className="eyebrow">Platform Net</span>
-                    <strong>${adminTransactions.reduce((sum, t) => sum + (t.platformCut || 0), 0).toFixed(2)}</strong>
-                    <p>Total platform revenue (20% share)</p>
+                    <span className="eyebrow">Platform Wallet</span>
+                    <strong>${platformWallet.toFixed(2)}</strong>
+                    <p>Includes game sales and feature fees</p>
                   </div>
                 ) : (
                   <div>
@@ -1393,12 +1582,12 @@ function App() {
                 </div>
               )}
 
-              <div className="featured-carousel">
-                {homeFeaturedGames.map((game) => {
+              <div className="featured-carousel" ref={featuredRef}>
+                {featuredGames.map((game, idx) => {
                   const cover = game.media?.cover?.trim() ? game.media.cover : buildPlaceholderCover(game.title);
 
                   return (
-                    <article key={game._id} className="featured-slide" role="button" tabIndex={0} onClick={() => openGameDetail(game._id)}>
+                    <article key={game._id} className={`featured-slide ${idx === featuredIndex ? 'active' : ''}`} role="button" tabIndex={0} onClick={() => openGameDetail(game._id)}>
                       <img src={cover} alt={game.title} />
                       <div className="featured-slide-copy">
                         <span>{game.genre}</span>
@@ -1778,6 +1967,83 @@ function App() {
                 </div>
               </article>
 
+              <article className="panel game-reviews-panel" style={{ marginTop: '2rem' }}>
+                <div className="section-heading compact">
+                  <div>
+                    <span className="eyebrow">Player feedback</span>
+                    <h2>Reviews</h2>
+                  </div>
+                </div>
+
+                <div className="reviews-list">
+                  {(!selectedGame.reviews || selectedGame.reviews.length === 0) ? (
+                    <p style={{ color: 'var(--text-muted)' }}>No reviews yet.</p>
+                  ) : (
+                    selectedGame.reviews.map((review) => (
+                      <div key={review._id} style={{ marginBottom: '1.5rem', paddingBottom: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                          <strong>{review.username}</strong>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'var(--accent)' }}>
+                            <Star size={14} /> {review.rating}/5
+                          </span>
+                        </div>
+                        <p style={{ margin: '0.5rem 0', fontSize: '0.95rem' }}>{review.comment}</p>
+                        
+                        {session.user && (
+                          <div style={{ display: 'flex', gap: '1rem', marginTop: '0.75rem' }}>
+                            <button
+                              type="button"
+                              className="cta ghost"
+                              style={{ padding: '4px 8px', fontSize: '0.85rem' }}
+                              onClick={() => handleLikeReview(review._id)}
+                            >
+                              👍 {review.likes.length}
+                            </button>
+                            <button
+                              type="button"
+                              className="cta ghost"
+                              style={{ padding: '4px 8px', fontSize: '0.85rem' }}
+                              onClick={() => handleDislikeReview(review._id)}
+                            >
+                              👎 {review.dislikes.length}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {role === 'buyer' && purchasedGames.some((game) => game._id === selectedGame._id) && !selectedGame.reviews?.some(r => r.userId === session.user?.id) && (
+                  <form className="listing-form" onSubmit={handleAddReview} style={{ marginTop: '2rem', padding: '1.5rem', background: 'rgba(255,255,255,0.02)', borderRadius: '1rem' }}>
+                    <h3 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Write a review</h3>
+                    <label>
+                      <span>Rating (1-5)</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="5"
+                        value={reviewForm.rating}
+                        onChange={(e) => setReviewForm({ ...reviewForm, rating: Number(e.target.value) })}
+                        required
+                        style={{ maxWidth: '100px' }}
+                      />
+                    </label>
+                    <label>
+                      <span>Comment</span>
+                      <textarea
+                        rows={3}
+                        value={reviewForm.comment}
+                        onChange={(e) => setReviewForm({ ...reviewForm, comment: e.target.value })}
+                        required
+                      />
+                    </label>
+                    {reviewMessage && <p style={{ color: 'var(--accent)', fontSize: '0.85rem', marginBottom: '1rem' }}>{reviewMessage}</p>}
+                    <button type="submit" className="cta primary">Submit Review</button>
+                  </form>
+                )}
+              </article>
+
               {role === 'seller' && ownGames.some((game) => game._id === selectedGame._id) && (
                 <article className="panel game-edit-panel">
                   <div className="section-heading compact">
@@ -2115,8 +2381,8 @@ function App() {
                 </div>
 
                 <div className="wallet-box">
-                  <span>Wallet balance</span>
-                  <strong>${walletBalance.toFixed(2)}</strong>
+                  <span>{isAdminUser ? 'Platform wallet' : 'Wallet balance'}</span>
+                  <strong>${(isAdminUser ? platformWallet : walletBalance).toFixed(2)}</strong>
                 </div>
                 <div className="wallet-box">
                   <span>Order total</span>
@@ -2915,9 +3181,9 @@ function App() {
                   </div>
                   <div className="stats-panel" style={{ display: 'grid', gap: '12px' }}>
                     <div style={{ padding: '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px' }}>
-                      <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Platform Net (20%)</span>
+                        <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Platform Wallet</span>
                       <p style={{ margin: '4px 0 0 0', fontSize: '1.5rem', fontWeight: '700' }}>
-                        ${adminTransactions.reduce((sum, t) => sum + (t.platformCut || 0), 0).toFixed(2)}
+                          ${platformWallet.toFixed(2)}
                       </p>
                     </div>
                     <div style={{ padding: '16px', background: 'rgba(34, 199, 168, 0.1)', borderRadius: '12px' }}>

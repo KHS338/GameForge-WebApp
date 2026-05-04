@@ -1,6 +1,38 @@
 import mongoose from 'mongoose';
 import bcryptjs from 'bcryptjs';
 
+const notificationSchema = new mongoose.Schema(
+  {
+    title: {
+      type: String,
+      required: true,
+    },
+    detail: {
+      type: String,
+      required: true,
+    },
+    tone: {
+      type: String,
+      enum: ['success', 'info', 'warning'],
+      default: 'info',
+    },
+    category: {
+      type: String,
+      enum: ['purchase', 'feature', 'system'],
+      default: 'system',
+    },
+    read: {
+      type: Boolean,
+      default: false,
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: true }
+);
+
 const userSchema = new mongoose.Schema(
   {
     email: {
@@ -30,6 +62,11 @@ const userSchema = new mongoose.Schema(
       default: 100,
       min: 0,
     },
+    notificationsEnabled: {
+      type: Boolean,
+      default: true,
+    },
+    notifications: [notificationSchema],
     discountSettings: {
       defaultPercent: {
         type: Number,
