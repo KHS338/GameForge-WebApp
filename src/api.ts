@@ -282,7 +282,11 @@ export const recommendationsApi = {
   },
 
   async getSimilar(gameId: string) {
-    const response = await fetch(`${API_BASE_URL}/recommendations/game/${gameId}`);
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/recommendations/game/${gameId}`, { headers });
     if (!response.ok) throw new Error('Failed to fetch similar games');
     return response.json() as Promise<ApiRecommendedGame[]>;
   },

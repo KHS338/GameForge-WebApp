@@ -1285,8 +1285,6 @@ function App() {
                 </div>
               </div>
 
-              <p className="auth-message">Your feed blends Atlas vector matches, popular titles, and games similar to the one you last opened.</p>
-
               {recommendationsLoading && <p className="auth-message">Loading recommendation feed...</p>}
               {recommendationsError && <p className="auth-message error">{recommendationsError}</p>}
 

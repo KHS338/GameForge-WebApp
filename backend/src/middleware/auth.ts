@@ -25,6 +25,22 @@ export function verifyToken(req: AuthRequest, res: Response, next: NextFunction)
   }
 }
 
+export function optionalVerifyToken(req: AuthRequest, _res: Response, next: NextFunction) {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+
+    if (!token) {
+      return next();
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as any;
+    req.user = decoded;
+    next();
+  } catch {
+    next();
+  }
+}
+
 export function requireRole(roles: string[]) {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user || !roles.includes(req.user.role)) {
