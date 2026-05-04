@@ -65,6 +65,9 @@ export interface ApiGame {
   price: number;
   featured: boolean;
   featureExpiresAt?: string | null;
+  lastFeaturedAt?: string | null;
+  systemFeatured?: boolean;
+  systemFeaturedUntil?: string | null;
   published: boolean;
   discountPercent: number;
   rating: number;
@@ -265,6 +268,16 @@ export const gamesApi = {
 };
 
 export const recommendationsApi = {
+  async getHomeFeatured() {
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/recommendations/home-featured`, { headers });
+    if (!response.ok) throw new Error('Failed to fetch home featured games');
+    return response.json() as Promise<ApiRecommendedGame[]>;
+  },
+
   async getPopular() {
     const response = await fetch(`${API_BASE_URL}/recommendations/popular`);
     if (!response.ok) throw new Error('Failed to fetch popular recommendations');

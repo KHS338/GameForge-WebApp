@@ -144,6 +144,7 @@ function App() {
   const [popularRecommendations, setPopularRecommendations] = useState<ApiRecommendedGame[]>([]);
   const [forYouRecommendations, setForYouRecommendations] = useState<ApiRecommendedGame[]>([]);
   const [similarRecommendations, setSimilarRecommendations] = useState<ApiRecommendedGame[]>([]);
+  const [homeFeaturedGames, setHomeFeaturedGames] = useState<ApiRecommendedGame[]>([]);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
   const [cartIds, setCartIds] = useState<string[]>([]);
@@ -198,8 +199,6 @@ function App() {
   const [topUpUserId, setTopUpUserId] = useState('');
   const [topUpAmount, setTopUpAmount] = useState('');
   const [topUpMessage, setTopUpMessage] = useState<string | null>(null);
-
-  const featuredGames = useMemo(() => games.filter((game) => game.featured), [games]);
 
   const role = session.user?.role ?? 'buyer';
   const navItems = role === 'admin' ? adminViews : (role === 'seller' ? sellerViews : buyerViews);
@@ -521,7 +520,8 @@ function App() {
       setRecommendationsError(null);
 
       try {
-        const [popular, forYou, similar] = await Promise.all([
+        const [homeFeatured, popular, forYou, similar] = await Promise.all([
+          recommendationsApi.getHomeFeatured().catch(() => [] as ApiRecommendedGame[]),
           recommendationsApi.getPopular(),
           recommendationsApi.getForYou().catch(() => [] as ApiRecommendedGame[]),
           selectedGameId ? recommendationsApi.getSimilar(selectedGameId).catch(() => [] as ApiRecommendedGame[]) : Promise.resolve([] as ApiRecommendedGame[]),
@@ -531,6 +531,7 @@ function App() {
           return;
         }
 
+        setHomeFeaturedGames(homeFeatured);
         setPopularRecommendations(popular);
         setForYouRecommendations(forYou);
         setSimilarRecommendations(similar);
@@ -1239,15 +1240,15 @@ function App() {
                 </div>
               </div>
 
-              {gamesLoading && <p className="auth-message">Loading featured games...</p>}
-              {!gamesLoading && featuredGames.length === 0 && (
+              {recommendationsLoading && <p className="auth-message">Loading featured games...</p>}
+              {!recommendationsLoading && homeFeaturedGames.length === 0 && (
                 <div className="empty-state">
                   <p>No featured games yet.</p>
                 </div>
               )}
 
               <div className="featured-carousel">
-                {featuredGames.map((game) => {
+                {homeFeaturedGames.map((game) => {
                   const cover = game.media?.cover?.trim() ? game.media.cover : buildPlaceholderCover(game.title);
 
                   return (

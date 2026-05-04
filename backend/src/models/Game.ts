@@ -35,6 +35,18 @@ const gameSchema = new mongoose.Schema(
             type: Date,
             default: null,
         },
+        lastFeaturedAt: {
+            type: Date,
+            default: null,
+        },
+        systemFeatured: {
+            type: Boolean,
+            default: false,
+        },
+        systemFeaturedUntil: {
+            type: Date,
+            default: null,
+        },
         published: {
             type: Boolean,
             default: true,
