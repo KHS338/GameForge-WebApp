@@ -18,13 +18,13 @@ import {
   DollarSign,
   WandSparkles,
 } from 'lucide-react';
-import { authApi, clearToken, gamesApi, transactionsApi, adminApi, getToken, recommendationsApi, type ApiGame, type ApiUser, type CreateGamePayload, type ApiTransaction, type ApiRecommendedGame } from './api';
+import { authApi, blogsApi, clearToken, gamesApi, transactionsApi, adminApi, getToken, recommendationsApi, type ApiGame, type ApiUser, type CreateGamePayload, type ApiTransaction, type ApiRecommendedGame, type ApiBlogPost } from './api';
 import { genreOptions } from './data';
 import { login, logout, type RootState, type UserProfile } from './store';
 import { ForumPage } from './components/ForumPage';
 
 type AuthMode = 'login' | 'signup' | 'admin-login';
-type ViewKey = 'home' | 'discover' | 'games' | 'sell' | 'profile' | 'cart' | 'payment' | 'detail' | 'library' | 'sales' | 'admin' | 'forums';
+type ViewKey = 'home' | 'discover' | 'blog' | 'games' | 'sell' | 'profile' | 'cart' | 'payment' | 'detail' | 'library' | 'sales' | 'admin' | 'forums';
 
 type Role = 'buyer' | 'seller' | 'admin';
 
@@ -49,9 +49,9 @@ const emptyGameForm = {
 
 const discountOptions = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 
-const buyerViews: ViewKey[] = ['home', 'discover', 'games', 'forums', 'library', 'cart', 'profile'];
-const sellerViews: ViewKey[] = ['home', 'discover', 'sell', 'forums', 'sales', 'profile'];
-const adminViews: ViewKey[] = ['home', 'discover', 'forums', 'admin', 'profile'];
+const buyerViews: ViewKey[] = ['home', 'discover', 'blog', 'games', 'forums', 'library', 'cart', 'profile'];
+const sellerViews: ViewKey[] = ['home', 'discover', 'blog', 'sell', 'forums', 'sales', 'profile'];
+const adminViews: ViewKey[] = ['home', 'discover', 'blog', 'forums', 'admin', 'profile'];
 
 function initials(value: string) {
   const parts = value.trim().split(/\s+/).filter(Boolean);
@@ -199,6 +199,20 @@ function App() {
   const [topUpUserId, setTopUpUserId] = useState('');
   const [topUpAmount, setTopUpAmount] = useState('');
   const [topUpMessage, setTopUpMessage] = useState<string | null>(null);
+
+  const [blogPosts, setBlogPosts] = useState<ApiBlogPost[]>([]);
+  const [blogLoading, setBlogLoading] = useState(false);
+  const [blogError, setBlogError] = useState<string | null>(null);
+  const [blogMessage, setBlogMessage] = useState<string | null>(null);
+  const [editingBlogId, setEditingBlogId] = useState<string | null>(null);
+  const [isBlogComposerOpen, setIsBlogComposerOpen] = useState(false);
+  const [blogForm, setBlogForm] = useState({
+    title: '',
+    summary: '',
+    content: '',
+    tags: '',
+    published: true,
+  });
 
   const role = session.user?.role ?? 'buyer';
   const navItems = role === 'admin' ? adminViews : (role === 'seller' ? sellerViews : buyerViews);
@@ -554,6 +568,42 @@ function App() {
   }, [session.isAuthenticated, selectedGameId]);
 
   useEffect(() => {
+    if (!session.isAuthenticated || activeView !== 'blog') {
+      return;
+    }
+
+    let mounted = true;
+
+    async function loadBlogs() {
+      setBlogLoading(true);
+      setBlogError(null);
+
+      try {
+        const posts = await blogsApi.getAll({ includeAll: role === 'admin' });
+        if (!mounted) {
+          return;
+        }
+
+        setBlogPosts(posts);
+      } catch (error) {
+        if (mounted) {
+          setBlogError(error instanceof Error ? error.message : 'Could not load blog posts');
+        }
+      } finally {
+        if (mounted) {
+          setBlogLoading(false);
+        }
+      }
+    }
+
+    void loadBlogs();
+
+    return () => {
+      mounted = false;
+    };
+  }, [activeView, role, session.isAuthenticated]);
+
+  useEffect(() => {
     if (selectedGame) {
       setGameEditForm({
         title: selectedGame.title,
@@ -873,6 +923,101 @@ function App() {
     }
   };
 
+  const reloadBlogs = async () => {
+    try {
+      const posts = await blogsApi.getAll({ includeAll: role === 'admin' });
+      setBlogPosts(posts);
+    } catch (error) {
+      setBlogError(error instanceof Error ? error.message : 'Could not load blog posts');
+    }
+  };
+
+  const handleBlogSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (role !== 'admin') {
+      return;
+    }
+
+    if (!blogForm.title.trim() || !blogForm.content.trim()) {
+      setBlogMessage('Title and content are required.');
+      return;
+    }
+
+    const payload = {
+      title: blogForm.title.trim(),
+      summary: blogForm.summary.trim(),
+      content: blogForm.content,
+      tags: blogForm.tags
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+      published: blogForm.published,
+    };
+
+    try {
+      if (editingBlogId) {
+        await blogsApi.update(editingBlogId, payload);
+        setBlogMessage('Blog post updated.');
+      } else {
+        await blogsApi.create(payload);
+        setBlogMessage('Blog post created.');
+      }
+
+      setEditingBlogId(null);
+      setIsBlogComposerOpen(false);
+      setBlogForm({ title: '', summary: '', content: '', tags: '', published: true });
+      await reloadBlogs();
+    } catch (error) {
+      setBlogMessage(error instanceof Error ? error.message : 'Could not save blog post');
+    }
+  };
+
+  const handleEditBlog = (post: ApiBlogPost) => {
+    setEditingBlogId(post._id);
+    setIsBlogComposerOpen(true);
+    setBlogForm({
+      title: post.title,
+      summary: post.summary ?? '',
+      content: post.content,
+      tags: Array.isArray(post.tags) ? post.tags.join(', ') : '',
+      published: post.published,
+    });
+    setBlogMessage(null);
+  };
+
+  const handleDeleteBlog = async (postId: string) => {
+    if (role !== 'admin') {
+      return;
+    }
+
+    try {
+      await blogsApi.delete(postId);
+      setBlogMessage('Blog post deleted.');
+      if (editingBlogId === postId) {
+        setEditingBlogId(null);
+        setIsBlogComposerOpen(false);
+        setBlogForm({ title: '', summary: '', content: '', tags: '', published: true });
+      }
+      await reloadBlogs();
+    } catch (error) {
+      setBlogMessage(error instanceof Error ? error.message : 'Could not delete blog post');
+    }
+  };
+
+  const openBlogComposer = () => {
+    setEditingBlogId(null);
+    setBlogForm({ title: '', summary: '', content: '', tags: '', published: true });
+    setBlogMessage(null);
+    setIsBlogComposerOpen(true);
+  };
+
+  const closeBlogComposer = () => {
+    setIsBlogComposerOpen(false);
+    setEditingBlogId(null);
+    setBlogForm({ title: '', summary: '', content: '', tags: '', published: true });
+  };
+
   const renderRecommendationCard = (game: ApiRecommendedGame) => {
     const cover = game.media?.cover?.trim() ? game.media.cover : buildPlaceholderCover(game.title);
     const score = typeof game.score === 'number' ? game.score : null;
@@ -1142,6 +1287,7 @@ function App() {
                 <small>
                   {item === 'home' ? 'Main dashboard' : 
                    item === 'discover' ? 'Curated picks' : 
+                   item === 'blog' ? 'Platform updates' : 
                    item === 'games' ? 'Browse and buy' : 
                    item === 'forums' ? 'Game discussions' : 
                    item === 'sell' ? 'Create listings' : 
@@ -1360,6 +1506,155 @@ function App() {
                   )}
                 </section>
               </div>
+            </section>
+          )}
+
+          {activeView === 'blog' && (
+            <section className="two-column">
+              <article className="panel" style={{ gridColumn: '1 / -1' }}>
+                <div className="section-heading">
+                  <div>
+                    <span className="eyebrow">GameForge blog</span>
+                    <h2>Updates, changes, and insights</h2>
+                  </div>
+                  {role === 'admin' && (
+                    <button type="button" className="cta primary compact" onClick={openBlogComposer}>
+                      <PlusCircle size={14} />
+                      Create New Blog Post
+                    </button>
+                  )}
+                </div>
+
+                {blogLoading && <p className="auth-message">Loading blog posts...</p>}
+                {blogError && <p className="auth-message error">{blogError}</p>}
+                {blogMessage && <p className="auth-message">{blogMessage}</p>}
+
+                {!blogLoading && blogPosts.length === 0 && (
+                  <div className="empty-state">
+                    <p>No blog posts yet.</p>
+                  </div>
+                )}
+
+                <div style={{ display: 'grid', gap: '16px' }}>
+                  {blogPosts.map((post) => {
+                    const author = typeof post.createdBy === 'string' ? 'Admin' : post.createdBy.username;
+                    const updatedBy = typeof post.updatedBy === 'string' ? 'Admin' : post.updatedBy?.username;
+
+                    return (
+                      <article key={post._id} className="game-card" style={{ cursor: 'default' }}>
+                        <div className="game-card-top">
+                          <span className="genre-tag">{post.published ? 'Published' : 'Draft'}</span>
+                          <span className="pill static">{new Date(post.publishedAt ?? post.createdAt).toLocaleDateString()}</span>
+                        </div>
+                        <h3>{post.title}</h3>
+                        {post.summary && <p>{post.summary}</p>}
+                        <div className="tag-row compact">
+                          {(post.tags?.length ? post.tags : ['update']).slice(0, 5).map((tag) => (
+                            <span key={`${post._id}-${tag}`} className="pill static">{tag}</span>
+                          ))}
+                        </div>
+                        <div style={{ marginTop: '8px', color: 'var(--muted)', whiteSpace: 'pre-wrap' }}>
+                          {post.content}
+                        </div>
+                        <div className="game-card-footer" style={{ marginTop: '12px' }}>
+                          <span>By {author}</span>
+                          <span>{updatedBy ? `Updated by ${updatedBy}` : 'Original post'}</span>
+                        </div>
+                        {role === 'admin' && (
+                          <div className="hero-actions" style={{ marginTop: '10px', gap: '8px' }}>
+                            <button type="button" className="cta ghost compact" onClick={() => handleEditBlog(post)}>
+                              Edit
+                            </button>
+                            <button type="button" className="cta ghost compact" onClick={() => handleDeleteBlog(post._id)}>
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
+              </article>
+
+              {role === 'admin' && isBlogComposerOpen && (
+                <div className="blog-composer-overlay" role="presentation" onClick={closeBlogComposer}>
+                  <article className="panel blog-composer" onClick={(event) => event.stopPropagation()}>
+                    <div className="section-heading compact">
+                      <div>
+                        <span className="eyebrow">Admin editor</span>
+                        <h2>{editingBlogId ? 'Edit post' : 'Create post'}</h2>
+                      </div>
+                      <button type="button" className="icon-button" onClick={closeBlogComposer} aria-label="Close composer">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+
+                    <form className="auth-form" onSubmit={handleBlogSubmit}>
+                      <label>
+                        <span>Title</span>
+                        <input
+                          value={blogForm.title}
+                          onChange={(event) => setBlogForm((current) => ({ ...current, title: event.target.value }))}
+                          placeholder="Post title"
+                        />
+                      </label>
+                      <label>
+                        <span>Summary</span>
+                        <input
+                          value={blogForm.summary}
+                          onChange={(event) => setBlogForm((current) => ({ ...current, summary: event.target.value }))}
+                          placeholder="Short summary"
+                        />
+                      </label>
+                      <label>
+                        <span>Tags (comma separated)</span>
+                        <input
+                          value={blogForm.tags}
+                          onChange={(event) => setBlogForm((current) => ({ ...current, tags: event.target.value }))}
+                          placeholder="update, patch, insight"
+                        />
+                      </label>
+                      <label>
+                        <span>Content</span>
+                        <textarea
+                          value={blogForm.content}
+                          onChange={(event) => setBlogForm((current) => ({ ...current, content: event.target.value }))}
+                          placeholder="Write site changes, updates, and insights"
+                          rows={10}
+                        />
+                      </label>
+                      <label className="inline-toggle" style={{ marginTop: '8px' }}>
+                        <input
+                          type="checkbox"
+                          checked={blogForm.published}
+                          onChange={(event) => setBlogForm((current) => ({ ...current, published: event.target.checked }))}
+                        />
+                        <span className="switch" />
+                        <span className="toggle-label">Published</span>
+                      </label>
+
+                      <div className="hero-actions" style={{ marginTop: '8px', gap: '8px' }}>
+                        <button type="submit" className="cta primary small">
+                          {editingBlogId ? 'Update post' : 'Publish post'}
+                        </button>
+                        {editingBlogId && (
+                          <button
+                            type="button"
+                            className="cta ghost small"
+                            onClick={() => {
+                              setEditingBlogId(null);
+                              setBlogForm({ title: '', summary: '', content: '', tags: '', published: true });
+                              setBlogMessage(null);
+                            }}
+                          >
+                            Cancel edit
+                          </button>
+                        )}
+                      </div>
+                    </form>
+                  </article>
+                </div>
+              )}
             </section>
           )}
 

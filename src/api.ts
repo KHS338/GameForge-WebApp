@@ -154,6 +154,25 @@ export interface ApiPaginatedForumTopics {
   sort: 'latest' | 'top' | 'activity' | string;
 }
 
+export interface ApiBlogAuthor {
+  _id: string;
+  username: string;
+}
+
+export interface ApiBlogPost {
+  _id: string;
+  title: string;
+  summary: string;
+  content: string;
+  tags: string[];
+  published: boolean;
+  publishedAt?: string | null;
+  createdBy: ApiBlogAuthor | string;
+  updatedBy?: ApiBlogAuthor | string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // Games API
 export const gamesApi = {
   async getAll(params?: { genre?: string; featured?: boolean; search?: string }) {
@@ -302,6 +321,76 @@ export const recommendationsApi = {
     const response = await fetch(`${API_BASE_URL}/recommendations/game/${gameId}`, { headers });
     if (!response.ok) throw new Error('Failed to fetch similar games');
     return response.json() as Promise<ApiRecommendedGame[]>;
+  },
+};
+
+export const blogsApi = {
+  async getAll(params?: { includeAll?: boolean }) {
+    const query = new URLSearchParams();
+    if (params?.includeAll) {
+      query.set('includeAll', 'true');
+    }
+
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/blogs${query.toString() ? `?${query.toString()}` : ''}`, {
+      headers,
+    });
+    if (!response.ok) throw new Error('Failed to fetch blog posts');
+    return response.json() as Promise<ApiBlogPost[]>;
+  },
+
+  async getById(id: string) {
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/blogs/${id}`, { headers });
+    if (!response.ok) throw new Error('Failed to fetch blog post');
+    return response.json() as Promise<ApiBlogPost>;
+  },
+
+  async create(payload: { title: string; summary?: string; content: string; tags?: string[]; published?: boolean }) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/blogs`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) throw new Error('Failed to create blog post');
+    return response.json() as Promise<ApiBlogPost>;
+  },
+
+  async update(id: string, payload: Partial<{ title: string; summary: string; content: string; tags: string[]; published: boolean }>) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/blogs/${id}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) throw new Error('Failed to update blog post');
+    return response.json() as Promise<ApiBlogPost>;
+  },
+
+  async delete(id: string) {
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/blogs/${id}`, {
+      method: 'DELETE',
+      headers,
+    });
+    if (!response.ok) throw new Error('Failed to delete blog post');
+    return response.json() as Promise<{ message: string }>;
   },
 };
 

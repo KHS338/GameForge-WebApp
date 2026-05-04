@@ -786,6 +786,32 @@ iframe {
   padding: 14px;
 }
 
+.blog-composer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(3, 8, 16, 0.66);
+  backdrop-filter: blur(12px);
+}
+
+.blog-composer {
+  width: min(780px, calc(100vw - 48px));
+  max-height: min(86vh, 900px);
+  overflow: auto;
+  box-shadow: 0 32px 110px rgba(0, 0, 0, 0.52);
+}
+
+.blog-composer .auth-form {
+  gap: 12px;
+}
+
+.blog-composer .auth-form textarea {
+  min-height: 220px;
+}
+
 /* Ensure inputs inside panels have breathing room from container edges */
 .panel input,
 .panel textarea,
