@@ -202,6 +202,70 @@ export interface ApiBlogPost {
   updatedAt: string;
 }
 
+// Analytics Interfaces
+export interface UserRegistrationAnalyticsData {
+  year: number;
+  month: number;
+  totalRegistrations: number;
+  buyerRegistrations: number;
+  sellerRegistrations: number;
+}
+
+export interface RevenueAnalyticsData {
+  year: number;
+  month: number;
+  totalRevenue: number;
+  platformRevenue: number;
+  sellerRevenue: number;
+  gameCount: number;
+  saleCount: number;
+}
+
+export interface GameAnalyticsEntry {
+  gameId: string | { _id: string; title: string };
+  sales: number;
+  revenue: number;
+}
+
+export interface SellerAnalyticsData {
+  _id: string;
+  sellerId: string;
+  year: number;
+  month: number;
+  totalSales: number;
+  totalRevenue: number;
+  averageRating: number;
+  gamesAnalytics: GameAnalyticsEntry[];
+}
+
+export interface GamePopularityAnalyticsData {
+  _id: string;
+  gameId: string | { _id: string; title: string; rating: number; sellerId: string };
+  year: number;
+  month: number;
+  averageRating: number;
+  reviewCount: number;
+  totalDownloads: number;
+  totalSales: number;
+}
+
+export interface AnalyticsResponse<T> {
+  data: T[];
+  months: Array<{ year: number; month: number }>;
+}
+
+export interface DashboardSummary {
+  currentMonth: string;
+  totalUsers: number;
+  totalGames: number;
+  totalSales: number;
+  monthlyStats: {
+    newRegistrations: number;
+    monthlyRevenue: number;
+    monthlySales: number;
+  };
+}
+
 // Games API
 export const gamesApi = {
   async getAll(params?: { genre?: string; featured?: boolean; search?: string }) {
@@ -930,5 +994,115 @@ export const forumsApi = {
     });
     if (!response.ok) throw new Error('Failed to report comment');
     return response.json() as Promise<{ message: string }>;
+  },
+};
+
+// Analytics API
+export const analyticsApi = {
+  async getAdminRegistrations() {
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/analytics/admin/registrations`, {
+      method: 'GET',
+      headers,
+    });
+    if (!response.ok) throw new Error('Failed to fetch registration analytics');
+    return response.json() as Promise<AnalyticsResponse<UserRegistrationAnalyticsData>>;
+  },
+
+  async getAdminRevenue() {
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/analytics/admin/revenue`, {
+      method: 'GET',
+      headers,
+    });
+    if (!response.ok) throw new Error('Failed to fetch revenue analytics');
+    return response.json() as Promise<AnalyticsResponse<RevenueAnalyticsData>>;
+  },
+
+  async getAdminSummary() {
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/analytics/admin/summary`, {
+      method: 'GET',
+      headers,
+    });
+    if (!response.ok) throw new Error('Failed to fetch dashboard summary');
+    return response.json() as Promise<DashboardSummary>;
+  },
+
+  async getSellerAnalytics() {
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/analytics/seller/analytics`, {
+      method: 'GET',
+      headers,
+    });
+    if (!response.ok) throw new Error('Failed to fetch seller analytics');
+    return response.json() as Promise<AnalyticsResponse<SellerAnalyticsData>>;
+  },
+
+  async getGamePopularity() {
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/analytics/games/popularity`, {
+      method: 'GET',
+      headers,
+    });
+    if (!response.ok) throw new Error('Failed to fetch game popularity analytics');
+    return response.json() as Promise<AnalyticsResponse<GamePopularityAnalyticsData>>;
+  },
+
+  async getTopSellingGames(year?: number, month?: number, limit?: number) {
+    const query = new URLSearchParams();
+    if (year) query.set('year', year.toString());
+    if (month) query.set('month', month.toString());
+    if (limit) query.set('limit', limit.toString());
+
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(
+      `${API_BASE_URL}/analytics/games/top-selling${query.toString() ? '?' + query.toString() : ''}`,
+      {
+        method: 'GET',
+        headers,
+      }
+    );
+    if (!response.ok) throw new Error('Failed to fetch top selling games');
+    return response.json() as Promise<GamePopularityAnalyticsData[]>;
+  },
+
+  async getTopRatedGames(year?: number, month?: number, limit?: number) {
+    const query = new URLSearchParams();
+    if (year) query.set('year', year.toString());
+    if (month) query.set('month', month.toString());
+    if (limit) query.set('limit', limit.toString());
+
+    const headers: Record<string, string> = {};
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(
+      `${API_BASE_URL}/analytics/games/top-rated${query.toString() ? '?' + query.toString() : ''}`,
+      {
+        method: 'GET',
+        headers,
+      }
+    );
+    if (!response.ok) throw new Error('Failed to fetch top rated games');
+    return response.json() as Promise<GamePopularityAnalyticsData[]>;
   },
 };

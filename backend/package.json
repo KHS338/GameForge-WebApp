@@ -8,7 +8,8 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc --noEmit",
     "start": "node dist/server.js",
-    "seed": "tsx src/seed.ts"
+    "seed": "tsx src/seed.ts",
+    "seed:analytics": "tsx src/scripts/seedAnalytics.ts"
   },
   "keywords": [
     "mern",

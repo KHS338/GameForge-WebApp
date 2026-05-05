@@ -18,14 +18,16 @@ import {
   DollarSign,
   WandSparkles,
   BellOff,
+  BarChart3,
 } from 'lucide-react';
 import { authApi, blogsApi, clearToken, gamesApi, transactionsApi, adminApi, getToken, recommendationsApi, type ApiGame, type ApiUser, type CreateGamePayload, type ApiTransaction, type ApiRecommendedGame, type ApiBlogPost } from './api';
 import { genreOptions } from './data';
 import { login, logout, type RootState, type UserProfile } from './store';
 import { ForumPage } from './components/ForumPage';
+import { AdminDashboard, SellerDashboard, GamePopularityDashboard } from './components/AnalyticsDashboard';
 
 type AuthMode = 'login' | 'signup' | 'admin-login';
-type ViewKey = 'home' | 'discover' | 'blog' | 'games' | 'sell' | 'profile' | 'cart' | 'payment' | 'detail' | 'library' | 'sales' | 'admin' | 'forums';
+type ViewKey = 'home' | 'discover' | 'blog' | 'games' | 'sell' | 'profile' | 'cart' | 'payment' | 'detail' | 'library' | 'sales' | 'admin' | 'forums' | 'analytics';
 
 type Role = 'buyer' | 'seller' | 'admin';
 
@@ -50,9 +52,9 @@ const emptyGameForm = {
 
 const discountOptions = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 
-const buyerViews: ViewKey[] = ['home', 'discover', 'blog', 'games', 'forums', 'library', 'cart', 'profile'];
-const sellerViews: ViewKey[] = ['home', 'blog', 'sell', 'forums', 'sales', 'profile'];
-const adminViews: ViewKey[] = ['home', 'discover', 'blog', 'forums', 'admin', 'profile'];
+const buyerViews: ViewKey[] = ['home', 'discover', 'blog', 'games', 'forums', 'library', 'cart', 'profile', 'analytics'];
+const sellerViews: ViewKey[] = ['home', 'discover', 'blog', 'sell', 'forums', 'sales', 'profile', 'analytics'];
+const adminViews: ViewKey[] = ['home', 'discover', 'blog', 'forums', 'admin', 'profile', 'analytics'];
 
 function initials(value: string) {
   const parts = value.trim().split(/\s+/).filter(Boolean);
@@ -1561,6 +1563,14 @@ function App() {
                       Add listing
                     </button>
                   )}
+                  <button type="button" className="cta ghost" onClick={() => setActiveView('discover')}>
+                    <Compass size={16} />
+                    Discover games
+                  </button>
+                  <button type="button" className="cta ghost" onClick={() => setActiveView('analytics')}>
+                    <BarChart3 size={16} />
+                    {role === 'admin' ? 'Analytics' : role === 'seller' ? 'Sales' : 'Popularity'}
+                  </button>
                   {role !== 'seller' && (
                     <button type="button" className="cta ghost" onClick={() => setActiveView('discover')}>
                       <Compass size={16} />
@@ -2296,6 +2306,14 @@ function App() {
                 games={games.map((game) => ({ _id: game._id, title: game.title }))}
                 initialGameId={forumGameId}
               />
+            </section>
+          )}
+
+          {activeView === 'analytics' && (
+            <section className="analytics-page-layout">
+              {role === 'admin' && <AdminDashboard isAdmin={true} />}
+              {role === 'seller' && <SellerDashboard isSeller={true} />}
+              {role === 'buyer' && <GamePopularityDashboard showGamePopularity={true} />}
             </section>
           )}
 
