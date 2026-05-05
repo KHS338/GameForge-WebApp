@@ -1016,6 +1016,11 @@ iframe {
   place-items: center;
 }
 
+.topbar-notification-button {
+  position: relative;
+  overflow: visible;
+}
+
 .icon-button.notifications-disabled {
   opacity: 0.5;
   filter: grayscale(0.6);
@@ -1023,8 +1028,8 @@ iframe {
 
 .topbar-badge {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: -5px;
+  right: -5px;
   min-width: 18px;
   height: 18px;
   padding: 0 6px;
@@ -1035,6 +1040,48 @@ iframe {
   color: #02120f;
   border-radius: 999px;
   box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.recommendation-reason {
+  margin: 8px 0 0;
+  color: rgba(152, 172, 203, 0.92);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.chat-recommendation {
+  display: grid;
+  gap: 14px;
+  border: 1px solid rgba(109, 247, 221, 0.18);
+  background: linear-gradient(135deg, rgba(16, 33, 62, 0.72), rgba(7, 18, 36, 0.82));
+}
+
+.chat-row {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.chat-row input {
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(3, 10, 20, 0.6);
+  color: var(--text);
+  padding: 0 14px;
+}
+
+.chat-row input:focus {
+  outline: none;
+  border-color: rgba(109, 247, 221, 0.65);
+}
+
+.chat-reply {
+  margin: 0;
+  color: #e9f6ff;
+  font-weight: 600;
 }
 
 .icon-button.danger {
@@ -2200,6 +2247,10 @@ iframe {
 
   .role-switch {
     display: none;
+  }
+
+  .chat-row {
+    grid-template-columns: 1fr;
   }
 }
 

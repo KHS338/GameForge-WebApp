@@ -107,6 +107,13 @@ export interface ApiGame {
 
 export interface ApiRecommendedGame extends ApiGame {
   score?: number;
+  reason?: string;
+}
+
+export interface ApiChatRecommendationsResponse {
+  query: string;
+  answer: string;
+  games: ApiRecommendedGame[];
 }
 
 export interface ApiTransaction {
@@ -447,6 +454,21 @@ export const recommendationsApi = {
     const response = await fetch(`${API_BASE_URL}/recommendations/game/${gameId}`, { headers });
     if (!response.ok) throw new Error('Failed to fetch similar games');
     return response.json() as Promise<ApiRecommendedGame[]>;
+  },
+
+  async chat(query: string) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const authHeader = getAuthHeader();
+    if (authHeader.Authorization) headers.Authorization = authHeader.Authorization;
+
+    const response = await fetch(`${API_BASE_URL}/recommendations/chat`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ query }),
+    });
+
+    if (!response.ok) throw new Error('Failed to fetch chat recommendations');
+    return response.json() as Promise<ApiChatRecommendationsResponse>;
   },
 };
 
