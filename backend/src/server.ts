@@ -49,6 +49,22 @@ async function startServer() {
     await mongoose.connect(MONGODB_URI);
     console.log('✓ Connected to MongoDB');
 
+    // Remove stale unique title index so sellers can list multiple games with the same name.
+    try {
+      const db = mongoose.connection.db;
+      const indexes = await db.collection('games').indexes();
+      const duplicateTitleIndex = indexes.find(
+        (index) => index.unique && typeof index.key?.title === 'number'
+      );
+
+      if (duplicateTitleIndex?.name) {
+        await db.collection('games').dropIndex(duplicateTitleIndex.name);
+        console.log(`✓ Dropped unique games title index: ${duplicateTitleIndex.name}`);
+      }
+    } catch (indexError) {
+      console.warn('⚠ Could not verify game title index state:', indexError);
+    }
+
     // Ensure admin accounts exist with correct role and password
     try {
       const adminsToSeed = [

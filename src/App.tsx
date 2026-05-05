@@ -51,7 +51,7 @@ const emptyGameForm = {
 const discountOptions = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 
 const buyerViews: ViewKey[] = ['home', 'discover', 'blog', 'games', 'forums', 'library', 'cart', 'profile'];
-const sellerViews: ViewKey[] = ['home', 'discover', 'blog', 'sell', 'forums', 'sales', 'profile'];
+const sellerViews: ViewKey[] = ['home', 'blog', 'sell', 'forums', 'sales', 'profile'];
 const adminViews: ViewKey[] = ['home', 'discover', 'blog', 'forums', 'admin', 'profile'];
 
 function initials(value: string) {
@@ -156,6 +156,11 @@ function App() {
   const [forYouRecommendations, setForYouRecommendations] = useState<ApiRecommendedGame[]>([]);
   const [similarRecommendations, setSimilarRecommendations] = useState<ApiRecommendedGame[]>([]);
   const [homeFeaturedGames, setHomeFeaturedGames] = useState<ApiRecommendedGame[]>([]);
+  const [chatPrompt, setChatPrompt] = useState('');
+  const [chatReply, setChatReply] = useState<string | null>(null);
+  const [chatRecommendations, setChatRecommendations] = useState<ApiRecommendedGame[]>([]);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
   const [cartIds, setCartIds] = useState<string[]>([]);
@@ -595,7 +600,7 @@ function App() {
       setActiveView('games');
     }
 
-    if (role === 'seller' && (activeView === 'games' || activeView === 'cart' || activeView === 'payment')) {
+    if (role === 'seller' && (activeView === 'games' || activeView === 'cart' || activeView === 'payment' || activeView === 'discover')) {
       setActiveView('sell');
     }
   }, [activeView, role]);
@@ -1160,6 +1165,27 @@ function App() {
     setBlogForm({ title: '', summary: '', content: '', tags: '', published: true });
   };
 
+  const handleChatRecommendations = async () => {
+    const prompt = chatPrompt.trim();
+    if (!prompt) {
+      setChatError('Tell me what kind of game you want first.');
+      return;
+    }
+
+    setChatLoading(true);
+    setChatError(null);
+
+    try {
+      const response = await recommendationsApi.chat(prompt);
+      setChatReply(response.answer);
+      setChatRecommendations(response.games ?? []);
+    } catch (error) {
+      setChatError(error instanceof Error ? error.message : 'Could not get chat recommendations');
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
   const renderRecommendationCard = (game: ApiRecommendedGame) => {
     const cover = game.media?.cover?.trim() ? game.media.cover : buildPlaceholderCover(game.title);
     const score = typeof game.score === 'number' ? game.score : null;
@@ -1199,6 +1225,7 @@ function App() {
           </span>
           <span>{score !== null ? `Score ${score.toFixed(2)}` : 'Recommended'}</span>
         </div>
+        {game.reason && <p className="recommendation-reason">{game.reason}</p>}
       </article>
     );
   };
@@ -1380,7 +1407,7 @@ function App() {
         <div className="topbar-actions">
           <button
             type="button"
-            className={`icon-button ${!notificationsEnabled ? 'notifications-disabled' : ''}`}
+            className={`icon-button topbar-notification-button ${!notificationsEnabled ? 'notifications-disabled' : ''}`}
             title={notificationsEnabled ? 'Notifications on — click to toggle' : 'Notifications off — click to toggle'}
             onClick={() => void handleNotificationToggle(!notificationsEnabled)}
           >
@@ -1451,20 +1478,18 @@ function App() {
             ))}
           </nav>
 
-          <div className="sidebar-card">
-            <div className="card-header compact">
-              <Sparkles size={16} />
-              <span>Account status</span>
+          {role === 'admin' && (
+            <div className="sidebar-card">
+              <div className="card-header compact">
+                <Sparkles size={16} />
+                <span>Account status</span>
+              </div>
+              <strong>Admin access</strong>
+              <p>
+                You have full platform oversight.
+              </p>
             </div>
-            <strong>{role === 'admin' ? 'Admin access' : role === 'seller' ? 'Seller access' : 'Buyer access'}</strong>
-            <p>
-              {role === 'admin' 
-                ? 'You have full platform oversight.' 
-                : role === 'seller' 
-                  ? 'You can create and manage listings.' 
-                  : 'You can browse games and buy.'}
-            </p>
-          </div>
+          )}
 
             <div className="sidebar-card notification-panel">
               <div className="card-header compact notification-panel-header">
@@ -1536,10 +1561,12 @@ function App() {
                       Add listing
                     </button>
                   )}
-                  <button type="button" className="cta ghost" onClick={() => setActiveView('discover')}>
-                    <Compass size={16} />
-                    Discover games
-                  </button>
+                  {role !== 'seller' && (
+                    <button type="button" className="cta ghost" onClick={() => setActiveView('discover')}>
+                      <Compass size={16} />
+                      Discover games
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -1612,7 +1639,7 @@ function App() {
             </section>
           )}
 
-          {activeView === 'discover' && (
+          {activeView === 'discover' && role !== 'seller' && (
             <section className="panel">
               <div className="section-heading">
                 <div>
@@ -1625,6 +1652,42 @@ function App() {
               {recommendationsError && <p className="auth-message error">{recommendationsError}</p>}
 
               <div style={{ display: 'grid', gap: '24px' }}>
+                <section className="chat-recommendation panel-inner">
+                  <div className="section-heading compact">
+                    <div>
+                      <span className="eyebrow">RAG Chat</span>
+                      <h2>Ask for game recommendations</h2>
+                    </div>
+                  </div>
+                  <p className="muted-copy">Example: "I want a story-rich fantasy RPG under $30 with tactical combat".</p>
+                  <div className="chat-row">
+                    <input
+                      type="text"
+                      value={chatPrompt}
+                      onChange={(event) => setChatPrompt(event.target.value)}
+                      placeholder="Describe what you want to play..."
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          void handleChatRecommendations();
+                        }
+                      }}
+                    />
+                    <button type="button" className="cta primary" onClick={() => void handleChatRecommendations()} disabled={chatLoading}>
+                      <WandSparkles size={14} />
+                      {chatLoading ? 'Thinking...' : 'Recommend'}
+                    </button>
+                  </div>
+                  {chatError && <p className="auth-message error">{chatError}</p>}
+                  {chatReply && <p className="chat-reply">{chatReply}</p>}
+
+                  {chatRecommendations.length > 0 && (
+                    <div className="card-grid">
+                      {chatRecommendations.map(renderRecommendationCard)}
+                    </div>
+                  )}
+                </section>
+
                 <section>
                   <div className="section-heading compact">
                     <div>
