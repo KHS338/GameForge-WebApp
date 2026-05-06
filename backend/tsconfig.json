@@ -7,7 +7,7 @@
       "DOM",
       "DOM.Iterable"
     ],
-    "module": "NodeNext",
+    "module": "ESNext",
     "skipLibCheck": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
@@ -22,7 +22,8 @@
     "declarationMap": true,
     "sourceMap": true,
     "forceConsistentCasingInFileNames": true,
-    "moduleResolution": "NodeNext"
+    "moduleResolution": "node",
+    "ignoreDeprecations": "5.0"
   },
   "include": [
     "src/**/*.ts"
