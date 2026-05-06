@@ -1,5 +1,5 @@
 import express, { Response } from 'express';
-import { verifyToken, requireAdmin, optionalVerifyToken } from '../middleware/auth.js';
+import { verifyToken, requireAdmin, optionalVerifyToken, AuthRequest } from '../middleware/auth.js';
 import {
   getUserRegistrationAnalytics,
   getRevenueAnalytics,
@@ -10,13 +10,6 @@ import {
   getDashboardSummary,
 } from '../services/analyticsService.js';
 import { computeAllAnalytics, computeSellerAnalytics, computeGamePopularityAnalytics } from '../services/analyticsComputeService.js';
-
-interface AuthRequest extends express.Request {
-  user?: {
-    id: string;
-    role: string;
-  };
-}
 
 const router = express.Router();
 

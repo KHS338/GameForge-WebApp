@@ -2,6 +2,12 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
 export interface AuthRequest extends Request {
+  headers: Request['headers'] & {
+    authorization?: string;
+  };
+  params: Request['params'];
+  query: Request['query'];
+  body: Request['body'];
   user?: {
     id: string;
     email: string;
