@@ -6,7 +6,7 @@
   "main": "src/server.ts",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc --noEmit",
+    "build": "tsc",
     "start": "node dist/server.js",
     "seed": "tsx src/seed.ts",
     "seed:analytics": "tsx src/scripts/seedAnalytics.ts"
