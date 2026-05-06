@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: gameforge-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+
+  - type: web
+    name: gameforge-frontend
+    runtime: static
+    rootDir: .
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    autoDeploy: true
+
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
