@@ -22,8 +22,7 @@
     "declarationMap": true,
     "sourceMap": true,
     "forceConsistentCasingInFileNames": true,
-    "moduleResolution": "node",
-    "ignoreDeprecations": "5.0"
+    "moduleResolution": "bundler"
   },
   "include": [
     "src/**/*.ts"
